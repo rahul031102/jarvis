@@ -1,0 +1,33 @@
+groq>=0.11.0
+python-dotenv>=1.0.1
+
+# Audio
+sounddevice>=0.4.7
+numpy>=1.26.4
+webrtcvad>=2.0.10
+faster-whisper>=1.0.3
+edge-tts>=6.1.12
+pydub>=0.25.1
+openwakeword>=0.6.0
+
+# Windows automation
+pywinauto>=0.6.8
+pyautogui>=0.9.54
+pycaw>=20240210
+comtypes>=1.4.5
+psutil>=5.9.8
+
+# Browser
+playwright>=1.45.0
+
+# Vision
+mss>=9.0.1
+pytesseract>=0.3.10
+Pillow>=10.4.0
+
+# Storage
+aiosqlite>=0.20.0
+
+# UI
+PyQt6>=6.7.1
+qasync>=0.27.1
