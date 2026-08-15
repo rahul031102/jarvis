@@ -42,6 +42,9 @@ IMMEDIATE_ACKS = {
     "remember": "Saving that.",
     "recall": "Checking my memory.",
     "get_running_processes": "Checking what's running.",
+    "read_screen": "Reading the screen.",
+    "start_project": "Opening the project.",
+    "stop_project": "Stopping the project.",
 }
 
 

@@ -71,3 +71,14 @@ def test_confirm_and_check_declines_pending():
         pass
     approved = gate.confirm_and_check(user_said_yes=False)
     assert approved is None
+
+
+def test_start_project_protected_path_rejected():
+    gate = SecurityGate()
+    with pytest.raises(ToolValidationError):
+        gate.validate("start_project", {"path": "C:/Windows"})
+
+
+def test_start_project_normal_path_passes():
+    gate = SecurityGate()
+    gate.validate("start_project", {"path": "C:/Projects/JARVIS"})  # should not raise

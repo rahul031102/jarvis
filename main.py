@@ -73,17 +73,19 @@ class VoiceJarvis:
             text = await self.stt.record_and_transcribe(max_wait_seconds=max_wait)
         except JarvisError:
             if continuous_listen:
-                # Silently time out and go back to wake word mode
-                log.info("No follow-up speech detected. Returning to wake-word mode.")
+                log.info("No follow-up speech detected. Continuing continuous listen...")
+                return True
             else:
                 log.info("No speech detected.")
-            return False
+                return False
 
         log.info("Command recognized: %s", text)
 
         if text.strip().lower() in STOP_PHRASES:
             await self.tts.stop()
             log.info("Speech/action stop requested.")
+            if continuous_listen:
+                return True
             return False
 
         await self.orchestrator.handle_utterance(text, speak=self.speak)

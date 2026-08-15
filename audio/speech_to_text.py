@@ -64,6 +64,11 @@ class SpeechToText:
         # Give it up to 10 seconds to start speaking for follow-ups (or min of max_wait_seconds)
         initial_wait_frames = int(min(max_wait_seconds, 10.0) * 1000 / FRAME_MS)
 
+        trigger_window = 6
+        trigger_threshold = 4
+        recent_blocks = collections.deque(maxlen=trigger_window)
+        recent_speech = collections.deque(maxlen=trigger_window)
+
         for idx in range(max_frames):
             # Read from shared microphone instead of sounddevice stream
             block = self.mic.read_samples(FRAME_SAMPLES)
@@ -71,9 +76,11 @@ class SpeechToText:
             is_speech = self._vad.is_speech(pcm, SAMPLE_RATE)
 
             if not triggered:
-                if is_speech:
+                recent_blocks.append(block)
+                recent_speech.append(is_speech)
+                if sum(recent_speech) >= trigger_threshold:
                     triggered = True
-                    frames.append(block)
+                    frames.extend(recent_blocks)
                 elif idx > initial_wait_frames:
                     # Silently stop recording if no speech is detected within initial window
                     break
@@ -87,6 +94,7 @@ class SpeechToText:
         if not frames:
             return None
         return np.concatenate(frames).astype(np.float32) / 32768.0
+
 
     def _transcribe(self, audio: np.ndarray) -> str:
         model = self._ensure_model()

@@ -188,6 +188,53 @@ TOOLS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_screen",
+            "description": (
+                "Capture the current screen and read any visible text via OCR "
+                "(e.g. to answer 'what error is showing', 'what does this popup say', "
+                "'read the text on my screen'). Only call this when the user's request "
+                "actually needs to know what's visually on screen."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "start_project",
+            "description": (
+                "Open a software project by folder path, install its dependencies if "
+                "missing (npm install / pip install -r requirements.txt), start its dev "
+                "server or main entry point, and report whether it's running. Works for "
+                "Node projects (package.json) and Python projects (requirements.txt / "
+                "pyproject.toml)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Absolute path to the project's root folder."}
+                },
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "stop_project",
+            "description": "Stop a project's server that was previously started with start_project.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Absolute path to the project's root folder."}
+                },
+                "required": ["path"],
+            },
+        },
+    },
 ]
 
 # Tools that are destructive/irreversible and MUST go through the

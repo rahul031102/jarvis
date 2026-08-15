@@ -45,6 +45,14 @@ class Settings:
     # Browser
     default_browser: str = field(default_factory=lambda: os.getenv("DEFAULT_BROWSER", "chrome"))
 
+    # Vision (screen awareness / OCR)
+    tesseract_cmd: str = field(default_factory=lambda: os.getenv("TESSERACT_CMD", ""))
+
+    # Project runner
+    project_start_timeout_s: int = field(
+        default_factory=lambda: int(os.getenv("PROJECT_START_TIMEOUT_S", "60"))
+    )
+
     # Logging
     log_level: str = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))
     log_file: str = field(default_factory=lambda: os.getenv("LOG_FILE", "logs/jarvis.log"))

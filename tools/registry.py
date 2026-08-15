@@ -13,7 +13,8 @@ from core.errors import ConfirmationRequiredError, JarvisError, ToolNotFoundErro
 from core.logging_setup import log
 from core.memory import Memory
 from core.security import SecurityGate
-from tools import applications, browser, filesystem, system
+from tools import applications, browser, filesystem, project_runner, system
+from vision.read_screen import read_screen
 
 ToolFunc = Callable[..., Awaitable[str]]
 
@@ -37,6 +38,9 @@ class ToolRegistry:
             "system_power": system.system_power,
             "remember": self._remember,
             "recall": self._recall,
+            "read_screen": lambda **_: read_screen(),
+            "start_project": project_runner.start_project,
+            "stop_project": project_runner.stop_project,
         }
 
     async def _remember(self, key: str, value: str) -> str:

@@ -54,7 +54,7 @@ class SecurityGate:
                 if not isinstance(level, int) or not (0 <= level <= 100):
                     raise ToolValidationError("Volume level must be between 0 and 100.")
 
-        elif tool_name in ("delete_path", "create_folder", "list_directory", "find_file"):
+        elif tool_name in ("delete_path", "create_folder", "list_directory", "find_file", "start_project", "stop_project"):
             path_str = args.get("path") or args.get("location") or ""
             self._validate_path_not_protected(path_str, tool_name)
 
