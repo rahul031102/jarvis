@@ -58,6 +58,69 @@ class SecurityGate:
             path_str = args.get("path") or args.get("location") or ""
             self._validate_path_not_protected(path_str, tool_name)
 
+        elif tool_name == "send_whatsapp_message":
+            contact = args.get("contact_name", "")
+            if not _SAFE_APP_NAME.match(contact):
+                raise ToolValidationError("That doesn't look like a valid contact name.")
+
+        elif tool_name == "forward_whatsapp_media":
+            sender = args.get("sender_name", "")
+            recipient = args.get("recipient_name", "")
+            for contact in (sender, recipient):
+                if not _SAFE_APP_NAME.match(contact):
+                    raise ToolValidationError("That doesn't look like a valid contact name.")
+
+        elif tool_name == "open_website_or_search":
+            query = args.get("query", "")
+            if not isinstance(query, str) or not query.strip():
+                raise ToolValidationError("Query must be a non-empty string.")
+
+        elif tool_name == "control_browser_tabs":
+            action = args.get("action", "")
+            if action not in ("new_tab", "close_tab", "next_tab", "prev_tab", "focus_tab"):
+                raise ToolValidationError(f"Invalid tab action: {action}")
+            tab_name = args.get("tab_name")
+            if action == "focus_tab" and (not tab_name or not isinstance(tab_name, str)):
+                raise ToolValidationError("A valid tab name must be specified to focus.")
+
+        elif tool_name in ("create_file", "open_system_folder"):
+            path_str = args.get("path") or args.get("folder_name") or ""
+            self._validate_path_not_protected(path_str, tool_name)
+
+        elif tool_name == "media_control":
+            action = args.get("action", "")
+            if action not in ("play_pause", "next_track", "prev_track", "mute"):
+                raise ToolValidationError(f"Invalid media action: {action}")
+
+        elif tool_name == "window_action":
+            action = args.get("action", "")
+            if action not in ("show_desktop", "maximize", "minimize", "close"):
+                raise ToolValidationError(f"Invalid window action: {action}")
+
+        elif tool_name in ("move_mouse", "click"):
+            self._validate_coordinates(args)
+
+        elif tool_name in ("press_key", "hotkey"):
+            self._validate_keys(tool_name, args)
+
+    def _validate_coordinates(self, args: dict) -> None:
+        from tools.mouse import MAX_COORDINATE
+
+        x, y = args.get("x"), args.get("y")
+        for val in (x, y):
+            if val is not None and not (isinstance(val, int) and 0 <= val <= MAX_COORDINATE):
+                raise ToolValidationError("Those coordinates don't look valid.")
+
+    def _validate_keys(self, tool_name: str, args: dict) -> None:
+        from tools.keyboard import VALID_KEYS
+
+        keys = [args["key"]] if tool_name == "press_key" else args.get("keys", [])
+        if tool_name == "hotkey" and (not keys or len(keys) > 4):
+            raise ToolValidationError("That doesn't look like a valid key combination.")
+        for k in keys:
+            if not isinstance(k, str) or k.strip().lower() not in VALID_KEYS:
+                raise ToolValidationError(f"'{k}' isn't a key I recognize.")
+
     def _validate_path_not_protected(self, path_str: str, tool_name: str) -> None:
         if not path_str:
             return

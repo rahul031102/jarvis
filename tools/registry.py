@@ -13,7 +13,7 @@ from core.errors import ConfirmationRequiredError, JarvisError, ToolNotFoundErro
 from core.logging_setup import log
 from core.memory import Memory
 from core.security import SecurityGate
-from tools import applications, browser, filesystem, project_runner, system
+from tools import applications, browser, filesystem, keyboard, mouse, project_runner, system, whatsapp, windows
 from vision.read_screen import read_screen
 
 ToolFunc = Callable[..., Awaitable[str]]
@@ -41,6 +41,30 @@ class ToolRegistry:
             "read_screen": lambda **_: read_screen(),
             "start_project": project_runner.start_project,
             "stop_project": project_runner.stop_project,
+            "list_open_windows": lambda **_: windows.list_open_windows(),
+            "get_active_window": lambda **_: windows.get_active_window(),
+            "focus_window": windows.focus_window,
+            "read_window_text": windows.read_window_text,
+            "list_browser_tabs": windows.list_browser_tabs,
+            "type_text": keyboard.type_text,
+            "press_key": keyboard.press_key,
+            "hotkey": keyboard.hotkey,
+            "move_mouse": mouse.move_mouse,
+            "click": mouse.click,
+            "click_control": mouse.click_control,
+            "send_whatsapp_message": whatsapp.send_whatsapp_message,
+            "forward_whatsapp_media": whatsapp.forward_whatsapp_media,
+            "open_website_or_search": browser.open_website_or_search,
+            "control_browser_tabs": browser.control_browser_tabs,
+            "play_music": browser.play_music,
+            "quick_note": filesystem.quick_note,
+            "create_file": filesystem.create_file,
+            "open_system_folder": filesystem.open_system_folder,
+            "find_and_open_file": filesystem.find_and_open_file,
+            "media_control": system.media_control,
+            "window_action": system.window_action,
+            "get_system_status": lambda **_: system.get_system_status(),
+            "calculate": system.calculate,
         }
 
     async def _remember(self, key: str, value: str) -> str:

@@ -35,6 +35,7 @@ class Settings:
     # TTS
     tts_provider: str = field(default_factory=lambda: os.getenv("TTS_PROVIDER", "edge"))
     tts_voice: str = field(default_factory=lambda: os.getenv("TTS_VOICE", "en-US-GuyNeural"))
+    tts_rate: str = field(default_factory=lambda: os.getenv("TTS_RATE", "+20%"))
     elevenlabs_api_key: str = field(default_factory=lambda: os.getenv("ELEVENLABS_API_KEY", ""))
     elevenlabs_voice_id: str = field(default_factory=lambda: os.getenv("ELEVENLABS_VOICE_ID", ""))
 

@@ -235,6 +235,317 @@ TOOLS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_open_windows",
+            "description": "List the titles of all currently open application windows (what's on the taskbar/alt-tab list right now).",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_active_window",
+            "description": "Get the title of whichever window currently has focus.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "focus_window",
+            "description": "Bring a specific open window/app to the foreground so subsequent typing or clicking lands in it.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Window title or app name to switch to (e.g. 'notepad', 'vs code')."}
+                },
+                "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_window_text",
+            "description": "Read the actual text content inside a specific window (editors, dialogs, forms) via its accessibility tree — more reliable than reading the screen visually for real text content.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Window title or app name to read from."}
+                },
+                "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "type_text",
+            "description": "Type text into whatever currently has keyboard focus. Call focus_window first if you need to target a specific app.",
+            "parameters": {
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "press_key",
+            "description": "Press a single key (e.g. 'enter', 'tab', 'esc', 'backspace', an arrow key, or a letter/number).",
+            "parameters": {
+                "type": "object",
+                "properties": {"key": {"type": "string"}},
+                "required": ["key"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "hotkey",
+            "description": "Press a key combination, e.g. ['ctrl','s'] for Ctrl+S, ['ctrl','shift','t'] for Ctrl+Shift+T.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "keys": {"type": "array", "items": {"type": "string"}, "description": "2-4 keys to press together."}
+                },
+                "required": ["keys"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "move_mouse",
+            "description": "Move the mouse cursor to a specific screen coordinate.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "x": {"type": "integer"},
+                    "y": {"type": "integer"},
+                },
+                "required": ["x", "y"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "click",
+            "description": "Click the mouse. If x/y are omitted, clicks at the current cursor position. Prefer click_control when the user names a specific button/element instead.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "x": {"type": "integer"},
+                    "y": {"type": "integer"},
+                    "button": {"type": "string", "enum": ["left", "right", "middle"]},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "click_control",
+            "description": (
+                "Click a named button/control inside a specific window by its visible text "
+                "(e.g. click_control('Notepad', 'Save')) — reliable, no coordinates needed. "
+                "Use this instead of click() whenever the user names what they want clicked."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "app_name": {"type": "string", "description": "Window title or app name."},
+                    "control_text": {"type": "string", "description": "Visible text of the button/control to click."},
+                },
+                "required": ["app_name", "control_text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_whatsapp_message",
+            "description": "Send a WhatsApp message directly to a contact by name (opens WhatsApp, searches contact, types, and sends). Very fast.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "contact_name": {"type": "string", "description": "The name of the contact as saved in WhatsApp."},
+                    "message": {"type": "string", "description": "The message text to send."}
+                },
+                "required": ["contact_name", "message"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "forward_whatsapp_media",
+            "description": "Forward the last message or photo from a sender's chat to another recipient on WhatsApp. Very fast.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sender_name": {"type": "string", "description": "The name of the sender who sent the photo/message."},
+                    "recipient_name": {"type": "string", "description": "The name of the contact to forward it to."}
+                },
+                "required": ["sender_name", "recipient_name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_website_or_search",
+            "description": "Open a website directly if a domain name is given (e.g. 'github.com'), otherwise searches Google in Chrome.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Website URL or search term."}
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "control_browser_tabs",
+            "description": "Manage Chrome tabs instantly using simulated keyboard shortcuts.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["new_tab", "close_tab", "next_tab", "prev_tab", "focus_tab"]},
+                    "tab_name": {"type": "string", "description": "The name of the tab to focus (required for focus_tab action)."}
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "play_music",
+            "description": "Search and play a song/artist directly on Spotify (or fallback to YouTube).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "The song title, artist, or playlist name."}
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "quick_note",
+            "description": "Quickly write or append a short note to notes.txt on the user's Desktop.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "The note text to append."}
+                },
+                "required": ["text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_file",
+            "description": "Write a new text or code file with specified file content instantly.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "The absolute path where the file will be saved."},
+                    "content": {"type": "string", "description": "The content of the file."}
+                },
+                "required": ["path", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_system_folder",
+            "description": "Open standard Windows directories (Downloads, Documents, Desktop, Pictures, Music, Videos) directly in File Explorer.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "folder_name": {"type": "string", "description": "Name of the folder or absolute path."}
+                },
+                "required": ["folder_name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_and_open_file",
+            "description": "Search and open a file matching a pattern from common user folders directly in its default program.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filename": {"type": "string", "description": "Fuzzy pattern to find the file name."}
+                },
+                "required": ["filename"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "media_control",
+            "description": "Trigger global media controls (play/pause, skip, mute) for system audio players.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["play_pause", "next_track", "prev_track", "mute"]}
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "window_action",
+            "description": "Perform basic window actions like maximize, minimize, close, or show desktop.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["show_desktop", "maximize", "minimize", "close"]}
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_system_status",
+            "description": "Retrieve current CPU load, memory utilization, disk space, and battery status.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "calculate",
+            "description": "Evaluate basic mathematical expressions in Python and return the answer.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "expression": {"type": "string", "description": "Expression containing numbers and operators +, -, *, /, %, (, )."}
+                },
+                "required": ["expression"],
+            },
+        },
+    },
 ]
 
 # Tools that are destructive/irreversible and MUST go through the

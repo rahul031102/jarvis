@@ -82,3 +82,48 @@ def test_start_project_protected_path_rejected():
 def test_start_project_normal_path_passes():
     gate = SecurityGate()
     gate.validate("start_project", {"path": "C:/Projects/JARVIS"})  # should not raise
+
+
+def test_move_mouse_valid_coords_pass():
+    gate = SecurityGate()
+    gate.validate("move_mouse", {"x": 100, "y": 200})  # should not raise
+
+
+def test_move_mouse_negative_coords_rejected():
+    gate = SecurityGate()
+    with pytest.raises(ToolValidationError):
+        gate.validate("move_mouse", {"x": -1, "y": 200})
+
+
+def test_click_absurd_coords_rejected():
+    gate = SecurityGate()
+    with pytest.raises(ToolValidationError):
+        gate.validate("click", {"x": 999999, "y": 200})
+
+
+def test_press_key_valid_passes():
+    gate = SecurityGate()
+    gate.validate("press_key", {"key": "enter"})  # should not raise
+
+
+def test_press_key_invalid_rejected():
+    gate = SecurityGate()
+    with pytest.raises(ToolValidationError):
+        gate.validate("press_key", {"key": "not_a_real_key"})
+
+
+def test_hotkey_valid_passes():
+    gate = SecurityGate()
+    gate.validate("hotkey", {"keys": ["ctrl", "s"]})  # should not raise
+
+
+def test_hotkey_too_many_keys_rejected():
+    gate = SecurityGate()
+    with pytest.raises(ToolValidationError):
+        gate.validate("hotkey", {"keys": ["ctrl", "alt", "shift", "win", "a"]})
+
+
+def test_hotkey_invalid_key_rejected():
+    gate = SecurityGate()
+    with pytest.raises(ToolValidationError):
+        gate.validate("hotkey", {"keys": ["ctrl", "bananakey"]})

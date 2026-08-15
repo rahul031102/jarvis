@@ -51,7 +51,7 @@ class TextToSpeech:
         import numpy as np
         from pydub import AudioSegment
 
-        communicate = edge_tts.Communicate(text, settings.tts_voice)
+        communicate = edge_tts.Communicate(text, settings.tts_voice, rate=settings.tts_rate)
         audio_bytes = bytearray()
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
