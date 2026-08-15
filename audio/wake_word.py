@@ -56,11 +56,14 @@ class WakeWordDetector:
         await asyncio.to_thread(self._listen_blocking, model)
 
     def _listen_blocking(self, model) -> None:
-        while True:
-            frame = self.mic.read_samples(FRAME_SAMPLES)
-            prediction = model.predict(frame)
-            score = prediction.get("hey_jarvis", 0.0)
-            if score > self._threshold:
-                log.info("Wake word detected (score=%.2f)", score)
-                model.reset()  # clear internal state before next listen cycle
-                return
+        try:
+            while True:
+                frame = self.mic.read_samples(FRAME_SAMPLES)
+                prediction = model.predict(frame)
+                score = prediction.get("hey_jarvis", 0.0)
+                if score > self._threshold:
+                    log.info("Wake word detected (score=%.2f)", score)
+                    model.reset()  # clear internal state before next listen cycle
+                    return
+        except RuntimeError:
+            return  # Exit thread cleanly on mic close

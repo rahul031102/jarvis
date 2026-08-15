@@ -30,7 +30,7 @@ from audio.microphone import ContinuousMicrophone
 from audio.speech_to_text import SpeechToText
 from audio.text_to_speech import TextToSpeech
 from audio.wake_word import WakeWordDetector
-from core.errors import to_speakable
+from core.errors import JarvisError, to_speakable
 from core.logging_setup import log
 from core.orchestrator import Orchestrator
 
@@ -54,44 +54,44 @@ class VoiceJarvis:
         continuous_listen = False
         while True:
             try:
-                if not continuous_listen:
-                    await self.wake_word.listen_for_wake_word()
-                    await play_wake_cue()
-                    log.info("Listening")
-                
-                try:
-                    max_wait = 10.0 if continuous_listen else 15.0
-                    text = await self.stt.record_and_transcribe(max_wait_seconds=max_wait)
-                except Exception:
-                    if continuous_listen:
-                        # Silently time out and go back to wake word mode
-                        log.info("No follow-up speech detected. Returning to wake-word mode.")
-                        continuous_listen = False
-                    else:
-                        log.info("No speech detected.")
-                    continue
-
-                log.info("Command recognized: %s", text)
-
-                if text.strip().lower() in STOP_PHRASES:
-                    await self.tts.stop()
-                    log.info("Speech/action stop requested.")
-                    continuous_listen = False
-                    continue
-
-                await self.orchestrator.handle_utterance(text, speak=self.speak)
-                await play_done_cue()
-                
-                # Keep conversation going without needing wake word
-                continuous_listen = True
-                log.info("Wake-word bypassed. Actively listening for follow-up...")
-
+                continuous_listen = await self._one_cycle(continuous_listen)
             except KeyboardInterrupt:
                 break
             except Exception as exc:  # never let one bad cycle kill the whole assistant
                 log.exception("Unhandled error in voice cycle")
                 await self.speak(to_speakable(exc))
                 continuous_listen = False
+
+    async def _one_cycle(self, continuous_listen: bool = False) -> bool:
+        if not continuous_listen:
+            await self.wake_word.listen_for_wake_word()
+            await play_wake_cue()
+            log.info("Listening")
+        
+        try:
+            max_wait = 10.0 if continuous_listen else 15.0
+            text = await self.stt.record_and_transcribe(max_wait_seconds=max_wait)
+        except JarvisError:
+            if continuous_listen:
+                # Silently time out and go back to wake word mode
+                log.info("No follow-up speech detected. Returning to wake-word mode.")
+            else:
+                log.info("No speech detected.")
+            return False
+
+        log.info("Command recognized: %s", text)
+
+        if text.strip().lower() in STOP_PHRASES:
+            await self.tts.stop()
+            log.info("Speech/action stop requested.")
+            return False
+
+        await self.orchestrator.handle_utterance(text, speak=self.speak)
+        await play_done_cue()
+        
+        # Keep conversation going without needing wake word
+        log.info("Wake-word bypassed. Actively listening for follow-up...")
+        return True
 
 
 async def main() -> None:
