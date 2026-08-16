@@ -128,9 +128,16 @@ async def window_action(action: str) -> str:
 async def get_system_status() -> str:
     import psutil
     def _do():
+        import os
+
         cpu = psutil.cpu_percent(interval=0.1)
         mem = psutil.virtual_memory().percent
-        disk = psutil.disk_usage("/").percent
+        # "/" isn't a valid path on Windows — disk_usage needs a real drive
+        # letter there (e.g. "C:\\"). Use the drive the OS/home dir lives on,
+        # which works on both Windows and POSIX.
+        system_drive = os.environ.get("SystemDrive")
+        disk_path = f"{system_drive}\\" if system_drive else "/"
+        disk = psutil.disk_usage(disk_path).percent
         battery = psutil.sensors_battery()
         if battery:
             bat_percent = battery.percent

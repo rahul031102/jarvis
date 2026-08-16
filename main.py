@@ -105,7 +105,17 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    import os
+    import signal
+
+    def sigint_handler(signum, frame):
+        print("\nJARVIS shutting down.")
+        os._exit(0)
+
+    signal.signal(signal.SIGINT, sigint_handler)
+
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\nJARVIS shutting down.")
+        os._exit(0)

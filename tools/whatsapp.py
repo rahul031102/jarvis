@@ -1,8 +1,34 @@
 """
-Automated WhatsApp macro. Bypasses the slow UIA tree-walk queries and
-instead uses fast native keyboard hotkeys (Ctrl+F to search, typing the
-contact, selecting, typing the message, and sending). This reduces the
-entire interaction to a single fast tool call, making it run in 3-4 seconds.
+Automated WhatsApp macro. Uses fast native keyboard hotkeys (Ctrl+F to
+search, typing the contact, selecting, typing the message, and sending)
+instead of the slower UIA click_control path.
+
+Safety note: this tool is registered in ai/schemas.py's DANGEROUS_TOOLS,
+so it always goes through the confirmation flow in core/security.py
+before running — the person hears back the exact contact and message
+text and has to approve it first. That matters here specifically because
+speech-to-text can mishear a name or word, and this action is irreversible
+once sent.
+
+Reliability note: blindly assuming "search, wait, press Enter" opened the
+correct contact's chat is not good enough for something irreversible — if
+it's wrong, the message goes to the wrong person with no way to unsend it.
+After selecting a contact, we verify the opened chat's header actually
+shows their name (via read_window_text, which is the accessibility-tree
+reader, not OCR) before typing/sending anything. If verification fails,
+we refuse to proceed rather than guess.
+
+Known limitation, stated honestly: the Shift+F6 pane-cycling hotkey used
+to jump focus onto the message timeline before copying is NOT a
+documented WhatsApp Desktop shortcut — it's a general Windows convention
+that may or may not land where intended, and hasn't been verified against
+a real WhatsApp Desktop install. Rather than assume it worked, the copy
+step now empties the clipboard first and checks it's actually non-empty
+afterward — if Shift+F6 didn't focus something copyable, this catches
+that and refuses to paste/send garbage or nothing, instead of silently
+"succeeding" with an empty message (which is exactly what happened before
+this fix: the copy silently failed, paste put nothing in the message box,
+and Enter on an empty WhatsApp composer is a silent no-op).
 """
 from __future__ import annotations
 
@@ -11,76 +37,76 @@ from tools import applications, keyboard, windows
 from core.errors import JarvisError
 
 
-async def send_whatsapp_message(contact_name: str, message: str) -> str:
-    # 1. Focus WhatsApp window (open it first if not running)
+async def _ensure_whatsapp_focused() -> None:
     try:
         await windows.focus_window("WhatsApp")
     except Exception:
         await applications.open_application("WhatsApp")
-        # Give the app a moment to launch and render
         await asyncio.sleep(2.5)
         try:
             await windows.focus_window("WhatsApp")
         except Exception as exc:
             raise JarvisError("I opened WhatsApp, but couldn't focus the window.", technical_detail=str(exc))
 
-    await asyncio.sleep(0.5)
 
-    # 2. Press Ctrl+F to focus the contact search bar
+async def _search_and_select_contact(contact_name: str) -> None:
     await keyboard.hotkey(["ctrl", "f"])
     await asyncio.sleep(0.3)
     await keyboard.hotkey(["ctrl", "a"])
     await asyncio.sleep(0.1)
     await keyboard.press_key("backspace")
     await asyncio.sleep(0.1)
-
-    # 3. Type the contact name
     await keyboard.type_text(contact_name)
-    # Give search results a moment to filter
     await asyncio.sleep(1.0)
-
-    # 4. Press Enter to select the contact and focus the message input field
     await keyboard.press_key("enter")
     await asyncio.sleep(0.5)
 
-    # 5. Type the message
-    await keyboard.type_text(message)
-    await asyncio.sleep(0.3)
 
-    # 6. Press Enter to send
-    await keyboard.press_key("enter")
-
-    return f"Message successfully sent to {contact_name}."
-
-
-async def forward_whatsapp_media(sender_name: str, recipient_name: str) -> str:
-    # 1. Focus WhatsApp window (open it first if not running)
+async def _verify_correct_chat_open(contact_name: str) -> None:
+    """Refuses to proceed if we can't confirm the opened chat actually
+    belongs to the requested contact — sending to the wrong person is
+    exactly the kind of mistake this check exists to catch before it's
+    irreversible."""
     try:
-        await windows.focus_window("WhatsApp")
+        visible_text = await windows.read_window_text("WhatsApp")
+    except JarvisError as exc:
+        raise JarvisError(
+            f"I couldn't confirm {contact_name}'s chat actually opened, so I stopped before sending anything. "
+            f"({exc.speakable_message})"
+        )
+    if contact_name.strip().lower() not in visible_text.lower():
+        raise JarvisError(
+            f"I searched for {contact_name} but the chat that opened doesn't show their name — "
+            f"it may be the wrong contact, so I stopped before sending anything."
+        )
+
+
+def _clipboard_has_content_sync() -> bool:
+    from pywinauto import clipboard as pw_clipboard
+
+    try:
+        formats = pw_clipboard.GetClipboardFormats()
     except Exception:
-        await applications.open_application("WhatsApp")
-        await asyncio.sleep(2.5)
-        try:
-            await windows.focus_window("WhatsApp")
-        except Exception as exc:
-            raise JarvisError("I opened WhatsApp, but couldn't focus the window.", technical_detail=str(exc))
+        return False
+    return bool(formats)
 
-    await asyncio.sleep(0.5)
 
-    # 2. Open sender's chat
-    await keyboard.hotkey(["ctrl", "f"])
-    await asyncio.sleep(0.3)
-    await keyboard.hotkey(["ctrl", "a"])
-    await asyncio.sleep(0.1)
-    await keyboard.press_key("backspace")
-    await asyncio.sleep(0.1)
-    await keyboard.type_text(sender_name)
-    await asyncio.sleep(1.0)
-    await keyboard.press_key("enter")
-    await asyncio.sleep(0.8)
+def _empty_clipboard_sync() -> None:
+    from pywinauto import clipboard as pw_clipboard
 
-    # 3. Focus the timeline pane and copy the last message (photo/media)
-    # Shift+F6 is the standard Windows pane-cycling hotkey to jump focus from input box directly to chat timeline.
+    try:
+        pw_clipboard.EmptyClipboard()
+    except Exception:
+        pass  # if this fails, the non-empty check after copy still catches a no-op copy
+
+
+async def _copy_last_message_and_verify() -> None:
+    """Empties the clipboard, attempts to focus the timeline and copy the
+    last message, then verifies the clipboard actually received
+    something new. Raises if nothing was copied — see the module
+    docstring for why this check exists."""
+    await asyncio.to_thread(_empty_clipboard_sync)
+
     await keyboard.press_key("escape")
     await asyncio.sleep(0.2)
     await keyboard.hotkey(["shift", "f6"])
@@ -88,21 +114,45 @@ async def forward_whatsapp_media(sender_name: str, recipient_name: str) -> str:
     await keyboard.hotkey(["ctrl", "c"])
     await asyncio.sleep(0.5)
 
-    # 4. Open recipient's chat
-    await keyboard.hotkey(["ctrl", "f"])
+    copied = await asyncio.to_thread(_clipboard_has_content_sync)
+    if not copied:
+        raise JarvisError(
+            "I tried to copy the last message but nothing ended up on the clipboard — "
+            "the copy step didn't land on the right element, so I stopped before pasting anything."
+        )
+
+
+async def send_whatsapp_message(contact_name: str, message: str) -> str:
+    await _ensure_whatsapp_focused()
+    await asyncio.sleep(0.5)
+    await _search_and_select_contact(contact_name)
+    await _verify_correct_chat_open(contact_name)
+
+    await keyboard.type_text(message)
     await asyncio.sleep(0.3)
-    await keyboard.hotkey(["ctrl", "a"])
-    await asyncio.sleep(0.1)
-    await keyboard.press_key("backspace")
-    await asyncio.sleep(0.1)
-    await keyboard.type_text(recipient_name)
-    await asyncio.sleep(1.0)
     await keyboard.press_key("enter")
-    await asyncio.sleep(0.8)
 
-    # 5. Paste and send the photo/media
+    return f"Message sent to {contact_name}."
+
+
+async def forward_whatsapp_media(sender_name: str, recipient_name: str) -> str:
+    await _ensure_whatsapp_focused()
+    await asyncio.sleep(0.5)
+
+    # 1. Open sender's chat and verify it's really them.
+    await _search_and_select_contact(sender_name)
+    await _verify_correct_chat_open(sender_name)
+
+    # 2. Copy the last message/media, and verify something was actually copied.
+    await _copy_last_message_and_verify()
+
+    # 3. Open recipient's chat and verify it's really them.
+    await _search_and_select_contact(recipient_name)
+    await _verify_correct_chat_open(recipient_name)
+
+    # 4. Paste and send.
     await keyboard.hotkey(["ctrl", "v"])
-    await asyncio.sleep(1.2)  # Give time for the media preview/upload dialog to load
+    await asyncio.sleep(1.2)  # time for the media preview/upload dialog to load
     await keyboard.press_key("enter")
 
-    return f"Successfully forwarded media from {sender_name} to {recipient_name}."
+    return f"Forwarded from {sender_name} to {recipient_name}."

@@ -93,6 +93,12 @@ async def quick_note(text: str) -> str:
 
 async def create_file(path: str, content: str) -> str:
     target = Path(path).expanduser().resolve()
+    if target.exists():
+        raise JarvisError(
+            f"{target.name} already exists — I won't overwrite it. "
+            "Delete it first or choose a different name if you want to replace it."
+        )
+
     def _do():
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
