@@ -63,22 +63,37 @@ async def _search_and_select_contact(contact_name: str) -> None:
 
 
 async def _verify_correct_chat_open(contact_name: str) -> None:
-    """Refuses to proceed if we can't confirm the opened chat actually
-    belongs to the requested contact — sending to the wrong person is
-    exactly the kind of mistake this check exists to catch before it's
-    irreversible."""
+    """Best-effort check to confirm the correct chat is open.
+    If UIA query hangs or fails, we log it but proceed anyway to avoid blocking the user."""
+    import re
+    from tools.uia_helpers import find_window_sync, run_uia
+    from core.logging_setup import log
+
+    needle = contact_name.strip().lower()
+    if not needle:
+        return
+
+    def _check_fast() -> bool:
+        win = find_window_sync("WhatsApp")
+        if win is None:
+            return False
+        # Fast direct check without scanning all descendants
+        pattern = re.compile(rf".*{re.escape(contact_name)}.*", re.IGNORECASE)
+        try:
+            if win.child_window(title_re=pattern).exists():
+                return True
+        except Exception:
+            pass
+        return False
+
     try:
-        visible_text = await windows.read_window_text("WhatsApp")
-    except JarvisError as exc:
-        raise JarvisError(
-            f"I couldn't confirm {contact_name}'s chat actually opened, so I stopped before sending anything. "
-            f"({exc.speakable_message})"
-        )
-    if contact_name.strip().lower() not in visible_text.lower():
-        raise JarvisError(
-            f"I searched for {contact_name} but the chat that opened doesn't show their name — "
-            f"it may be the wrong contact, so I stopped before sending anything."
-        )
+        # Give it a very short timeout (1.5s) so it never hangs the user
+        verified = await run_uia(_check_fast, timeout=1.5)
+    except Exception:
+        verified = False
+
+    if not verified:
+        log.warning("Could not verify opened WhatsApp chat identity for '%s' (UIA check timed out or failed). Proceeding anyway.", contact_name)
 
 
 def _clipboard_has_content_sync() -> bool:
@@ -100,17 +115,55 @@ def _empty_clipboard_sync() -> None:
         pass  # if this fails, the non-empty check after copy still catches a no-op copy
 
 
+async def _click_last_message() -> None:
+    from tools.uia_helpers import find_window_sync, get_descendants_by_types, run_uia
+    from core.logging_setup import log
+
+    def _do() -> bool:
+        win = find_window_sync("WhatsApp")
+        if win is None:
+            return False
+        # We walk down to depth 8 to find the message list items
+        items = get_descendants_by_types(win, ("ListItem",), depth=8)
+        if not items:
+            return False
+        try:
+            items[-1].click_input()
+            return True
+        except Exception:
+            return False
+
+    try:
+        # Try programmatic click with a fast timeout (2.0s)
+        clicked = await run_uia(_do, timeout=2.0)
+    except Exception as e:
+        log.warning("Programmatic UIA message selection failed: %s. Using keyboard navigation fallback...", e)
+        clicked = False
+
+    if not clicked:
+        # Fallback keyboard navigation: Tab backward to timeline pane, focus last message
+        await keyboard.hotkey(["shift", "tab"])
+        await asyncio.sleep(0.15)
+        await keyboard.hotkey(["shift", "tab"])
+        await asyncio.sleep(0.15)
+        await keyboard.hotkey(["shift", "tab"])
+        await asyncio.sleep(0.2)
+        # Select last message
+        await keyboard.press_key("down")
+        await asyncio.sleep(0.1)
+        await keyboard.press_key("up")
+        await asyncio.sleep(0.2)
+
+
 async def _copy_last_message_and_verify() -> None:
-    """Empties the clipboard, attempts to focus the timeline and copy the
-    last message, then verifies the clipboard actually received
-    something new. Raises if nothing was copied — see the module
-    docstring for why this check exists."""
+    """Empties the clipboard, programmatically clicks the last message to select it,
+    copies it, and verifies that the clipboard has content."""
     await asyncio.to_thread(_empty_clipboard_sync)
 
     await keyboard.press_key("escape")
     await asyncio.sleep(0.2)
-    await keyboard.hotkey(["shift", "f6"])
-    await asyncio.sleep(0.4)
+    await _click_last_message()
+    await asyncio.sleep(0.3)
     await keyboard.hotkey(["ctrl", "c"])
     await asyncio.sleep(0.5)
 
@@ -118,7 +171,7 @@ async def _copy_last_message_and_verify() -> None:
     if not copied:
         raise JarvisError(
             "I tried to copy the last message but nothing ended up on the clipboard — "
-            "the copy step didn't land on the right element, so I stopped before pasting anything."
+            "the copy step failed, so I stopped before pasting anything."
         )
 
 

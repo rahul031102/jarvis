@@ -57,7 +57,7 @@ def find_window_sync(needle: str):
     return None
 
 
-def get_descendants_by_types(win, wanted_types: tuple[str, ...]) -> list:
+def get_descendants_by_types(win, wanted_types: tuple[str, ...], depth: int | None = None) -> list:
     """Walk the accessibility tree ONCE and filter by type in Python,
     instead of calling descendants(control_type=X) separately per type.
 
@@ -72,7 +72,7 @@ def get_descendants_by_types(win, wanted_types: tuple[str, ...]) -> list:
     wanted = set(wanted_types)
     matches = []
     try:
-        all_ctrls = win.descendants()
+        all_ctrls = win.descendants(depth=depth) if depth is not None else win.descendants()
     except Exception:
         return matches
     for ctrl in all_ctrls:

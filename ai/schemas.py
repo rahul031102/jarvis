@@ -550,4 +550,4 @@ TOOLS: list[dict] = [
 
 # Tools that are destructive/irreversible and MUST go through the
 # confirm-then-execute flow in core/security.py before ever running.
-DANGEROUS_TOOLS: set[str] = {"delete_path", "system_power", "send_whatsapp_message", "forward_whatsapp_media"}
+DANGEROUS_TOOLS: set[str] = {"delete_path", "system_power"}

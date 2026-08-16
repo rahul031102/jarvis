@@ -155,9 +155,16 @@ class Orchestrator:
 
     async def _resolve_confirmation(self, text: str, *, speak) -> str:
         self._awaiting_confirmation = False
-        affirmative = text.strip().lower() in (
-            "yes", "yeah", "yep", "confirm", "do it", "go ahead", "continue",
-        )
+        clean_text = text.strip().rstrip(".?!,").lower()
+        words = clean_text.split()
+        
+        starters = {"yes", "yeah", "yep", "sure", "ok", "okay", "confirm", "continue", "send"}
+        phrases = ["do it", "go ahead", "do that", "go on", "send it", "send the message"]
+        
+        has_starter = any(words[0] == s for s in starters) if words else False
+        has_phrase = any(p in clean_text for p in phrases)
+        
+        affirmative = has_starter or has_phrase
         approved = self.tools.security.confirm_and_check(affirmative)
 
         if not approved:

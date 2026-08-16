@@ -94,7 +94,7 @@ async def read_window_text(name: str) -> str:
         if win is None:
             return None
         texts: list[str] = []
-        for ctrl in get_descendants_by_types(win, TEXT_CONTROL_TYPES):
+        for ctrl in get_descendants_by_types(win, TEXT_CONTROL_TYPES, depth=6):
             try:
                 text = ctrl.window_text().strip()
                 if text and text not in texts:
