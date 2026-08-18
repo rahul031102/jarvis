@@ -122,56 +122,40 @@ async def test_control_browser_tabs_refuses_when_no_browser_focused():
 
 
 @pytest.mark.asyncio
-async def test_play_music_uses_spotify_when_already_running():
-    mock_open = MagicMock()
-    with patch("webbrowser.open", mock_open), \
-         patch("psutil.process_iter", return_value=[MagicMock(info={"name": "Spotify.exe"})]):
+async def test_play_music_uses_spotify_when_launch_confirmed():
+    with patch("webbrowser.open", return_value=True) as mock_open, \
+         patch("tools.windows.focus_window", new=AsyncMock(return_value="Switched.")), \
+         patch("asyncio.sleep", new=AsyncMock()):
         result = await browser.play_music("classical piano")
     assert "Spotify" in result
-    mock_open.assert_called_once()
-    assert "spotify:" in mock_open.call_args[0][0]
+    assert "spotify:" in mock_open.call_args_list[0][0][0]
 
 
 @pytest.mark.asyncio
-async def test_play_music_launches_spotify_when_installed_but_not_running():
-    """Spotify wasn't running before the call, but IS running by the time
-    we check again after firing the URI — simulates it launching
-    successfully via the protocol handler."""
-    call_count = {"n": 0}
-
-    def fake_process_iter(attrs=None):
-        call_count["n"] += 1
-        if call_count["n"] == 1:
-            return []  # not running yet, before the URI is fired
-        return [MagicMock(info={"name": "Spotify.exe"})]  # running now
-
-    mock_open = MagicMock()
-    with patch("webbrowser.open", mock_open), \
-         patch("psutil.process_iter", side_effect=fake_process_iter), \
-         patch("asyncio.sleep", new=AsyncMock()):
-        result = await browser.play_music("jazz")
-
-    assert "Spotify" in result
-    mock_open.assert_called_once()  # never fell back to YouTube
-
-
-@pytest.mark.asyncio
-async def test_play_music_falls_back_to_youtube_when_spotify_unavailable():
-    """Spotify never shows up as running, before or after — proves the
-    fallback actually fires and the result is honest about what happened
-    (the old bug: webbrowser.open() never raises for a missing protocol
-    handler, so the except-based fallback could never trigger and would
-    falsely claim Spotify success)."""
-    mock_open = MagicMock()
-    with patch("webbrowser.open", mock_open), \
-         patch("psutil.process_iter", return_value=[]), \
+async def test_play_music_falls_back_to_youtube_when_webbrowser_open_returns_false():
+    """webbrowser.open() returning False means the OS itself reported no
+    handler for the URI — the old bug was that this case could never be
+    detected because a try/except around a call that never raises is dead
+    code. This proves the fallback fires when open() honestly reports failure."""
+    with patch("webbrowser.open", return_value=False) as mock_open, \
          patch("asyncio.sleep", new=AsyncMock()):
         result = await browser.play_music("lofi beats")
-
     assert "YouTube" in result
-    assert "Spotify isn't installed" in result
-    assert mock_open.call_count == 2  # tried spotify: URI, then fell back
-    assert "youtube.com" in mock_open.call_args[0][0]
+    assert "youtube.com" in mock_open.call_args_list[-1][0][0]
+
+
+@pytest.mark.asyncio
+async def test_play_music_falls_back_to_youtube_when_spotify_window_never_appears():
+    """webbrowser.open() reported success (True), but Spotify never
+    actually came to the foreground — focus_window raising means it
+    didn't launch, so this should still fall back honestly instead of
+    claiming Spotify success on a launch call alone."""
+    with patch("webbrowser.open", return_value=True) as mock_open, \
+         patch("tools.windows.focus_window", new=AsyncMock(side_effect=JarvisError("not found"))), \
+         patch("asyncio.sleep", new=AsyncMock()):
+        result = await browser.play_music("jazz")
+    assert "YouTube" in result
+    assert "doesn't seem to be available" in result
 
 
 # --- System & Window Macros ---
@@ -213,27 +197,25 @@ async def test_get_system_status():
     assert "Disk: 60.0%" in result
 
 
-def test_get_system_status_uses_valid_windows_drive_root_not_slash():
-    """The fix: psutil.disk_usage("/") isn't a valid path on Windows —
-    it needs an actual drive root like "C:\\". This asserts the real
-    argument passed, which the mocked-return-value test above can't catch
-    since it accepts any argument."""
-    import os
-    drive, _ = os.path.splitdrive(str(Path.home()))
-    expected_root = f"{drive}\\" if drive else "C:\\"
-
+def test_get_system_status_uses_system_drive_env_var_on_windows():
+    """The fix: psutil.disk_usage("/") isn't a valid path on Windows — it
+    needs an actual drive root like "C:\\". The real implementation reads
+    the SystemDrive environment variable (which Windows always sets, e.g.
+    "C:") rather than hardcoding a drive letter or guessing from the home
+    directory — this asserts that env var is actually used when present."""
     mock_disk = MagicMock()
     mock_disk.percent = 50.0
 
     with patch("psutil.cpu_percent", return_value=10.0), \
          patch("psutil.virtual_memory", return_value=MagicMock(percent=20.0)), \
          patch("psutil.disk_usage", return_value=mock_disk) as mock_disk_usage, \
-         patch("psutil.sensors_battery", return_value=None):
+         patch("psutil.sensors_battery", return_value=None), \
+         patch.dict("os.environ", {"SystemDrive": "D:"}):
         asyncio.run(system.get_system_status())
 
     called_with = mock_disk_usage.call_args[0][0]
+    assert called_with == "D:\\"
     assert called_with != "/"
-    assert called_with == expected_root
 
 
 @pytest.mark.asyncio
@@ -308,13 +290,19 @@ async def test_forward_whatsapp_media_succeeds_when_both_chats_verified():
     async def fake_read(name):
         return read_results.pop(0)
 
+    seq_numbers = [100, 101]  # before -> after: changed, so copy is considered successful
+
+    async def fake_seq():
+        return seq_numbers.pop(0)
+
     with patch("tools.windows.focus_window", new=AsyncMock(return_value="Switched.")), \
          patch("tools.keyboard.hotkey", new=AsyncMock()) as mock_hotkey, \
          patch("tools.keyboard.type_text", new=AsyncMock()) as mock_type, \
          patch("tools.keyboard.press_key", new=AsyncMock()), \
          patch("tools.windows.read_window_text", new=fake_read), \
-         patch.object(whatsapp, "_empty_clipboard_sync", return_value=None), \
-         patch.object(whatsapp, "_clipboard_has_content_sync", return_value=True):
+         patch.object(whatsapp, "_click_last_message", new=AsyncMock(return_value=True)), \
+         patch("tools.whatsapp.get_clipboard_sequence_number", new=fake_seq), \
+         patch("asyncio.sleep", new=AsyncMock()):
         result = await whatsapp.forward_whatsapp_media("Govardhan", "Mummy")
 
     assert "Forwarded from Govardhan to Mummy" in result
@@ -325,29 +313,60 @@ async def test_forward_whatsapp_media_succeeds_when_both_chats_verified():
 
 
 @pytest.mark.asyncio
-async def test_forward_whatsapp_media_refuses_when_clipboard_stays_empty():
+async def test_forward_whatsapp_media_refuses_when_clipboard_unchanged():
     """This is the exact bug that shipped and reached a real user: the
-    Shift+F6 focus-jump never lands on something copyable in some cases,
-    Ctrl+C copies nothing, and the old code pasted+sent an empty message
-    anyway while claiming "Forwarded" — no message was actually sent.
-    With clipboard verification, this must now refuse before ever pasting
-    or claiming success."""
+    copy step doesn't always land on something copyable, Ctrl+C copies
+    nothing, and the old code pasted+sent an empty message anyway while
+    claiming "Forwarded" — no message was actually sent. Verification now
+    uses the clipboard SEQUENCE NUMBER (format-agnostic — catches images
+    too, not just text, unlike the old GetClipboardFormats() check), and
+    must refuse before ever pasting or claiming success if it never changes,
+    even after the one built-in retry."""
     from tools import whatsapp
+
+    async def fake_seq():
+        return 42  # same value every call — clipboard never actually changed
 
     with patch("tools.windows.focus_window", new=AsyncMock(return_value="Switched.")), \
          patch("tools.keyboard.hotkey", new=AsyncMock()) as mock_hotkey, \
          patch("tools.keyboard.type_text", new=AsyncMock()), \
          patch("tools.keyboard.press_key", new=AsyncMock()), \
          patch("tools.windows.read_window_text", new=AsyncMock(return_value="Chat with Govardhan")), \
-         patch.object(whatsapp, "_empty_clipboard_sync", return_value=None), \
-         patch.object(whatsapp, "_clipboard_has_content_sync", return_value=False):
+         patch.object(whatsapp, "_click_last_message", new=AsyncMock(return_value=True)), \
+         patch("tools.whatsapp.get_clipboard_sequence_number", new=fake_seq), \
+         patch("asyncio.sleep", new=AsyncMock()):
         with pytest.raises(JarvisError) as excinfo:
             await whatsapp.forward_whatsapp_media("Govardhan", "Mummy")
 
-    assert "nothing ended up on the clipboard" in str(excinfo.value)
+    assert "clipboard never changed" in str(excinfo.value)
     # The paste step (ctrl+v) must NEVER have been reached.
     paste_calls = [c for c in mock_hotkey.call_args_list if c.args[0] == ["ctrl", "v"]]
     assert not paste_calls
+
+
+@pytest.mark.asyncio
+async def test_forward_whatsapp_media_retries_clipboard_check_once_before_failing():
+    """Some clipboard writes (especially image/media) populate a beat
+    after the copy hotkey fires — the check must retry once before
+    concluding the copy genuinely failed, not fail on the very first read."""
+    from tools import whatsapp
+
+    seq_numbers = [5, 5, 6]  # before=5, first check still 5 (not yet), retry sees 6 (changed)
+
+    async def fake_seq():
+        return seq_numbers.pop(0)
+
+    with patch("tools.windows.focus_window", new=AsyncMock(return_value="Switched.")), \
+         patch("tools.keyboard.hotkey", new=AsyncMock()), \
+         patch("tools.keyboard.type_text", new=AsyncMock()), \
+         patch("tools.keyboard.press_key", new=AsyncMock()), \
+         patch("tools.windows.read_window_text", new=AsyncMock(side_effect=["Chat with Govardhan", "Chat with Mummy"])), \
+         patch.object(whatsapp, "_click_last_message", new=AsyncMock(return_value=True)), \
+         patch("tools.whatsapp.get_clipboard_sequence_number", new=fake_seq), \
+         patch("asyncio.sleep", new=AsyncMock()):
+        result = await whatsapp.forward_whatsapp_media("Govardhan", "Mummy")
+
+    assert "Forwarded" in result
 
 
 @pytest.mark.asyncio

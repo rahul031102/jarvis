@@ -34,7 +34,8 @@ async def extract_text(image_path: Path) -> str:
         _configure_tesseract()
         try:
             image = Image.open(image_path)
-            return pytesseract.image_to_string(image)
+            # Disable system dictionary word loading (DAWGs) to speed up recognition on UI text.
+            return pytesseract.image_to_string(image, config="--psm 3 -c load_system_dawg=0 -c load_freq_dawg=0")
         except pytesseract.TesseractNotFoundError:
             raise JarvisError(
                 "I can't read the screen because Tesseract OCR isn't installed. "

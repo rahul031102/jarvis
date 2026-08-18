@@ -145,15 +145,18 @@ async def find_and_open_file(filename: str) -> str:
                 for p in d.rglob(f"*{filename}*"):
                     if p.is_file():
                         matches.append(p)
-                        if len(matches) >= 5:
-                            break
-            if len(matches) >= 5:
-                break
     await asyncio.to_thread(_search)
     if not matches:
         raise JarvisError(f"I couldn't find a file matching '{filename}'.")
-    
-    best_match = matches[0]
+
+    # Most recently modified first — not the raw rglob() order, which is
+    # arbitrary filesystem-traversal order and can surface an old/stale
+    # file ahead of the one the person actually means. Matches find_file's
+    # existing recency behavior for consistency.
+    matches_with_mtime = [(p, p.stat().st_mtime) for p in matches]
+    matches_with_mtime.sort(key=lambda x: x[1], reverse=True)
+    best_match = matches_with_mtime[0][0]
+
     try:
         await asyncio.to_thread(os.startfile, str(best_match))
     except Exception as exc:

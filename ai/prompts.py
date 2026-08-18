@@ -26,5 +26,6 @@ click_control genuinely can't find something and coordinates are the only option
 know it's the active window — type_text/press_key/hotkey act on whatever currently has focus.
 - list_open_windows / get_active_window tell you window TITLES only — a browser window's title is \
 its currently active tab, not every tab it has open. Don't claim to see inside a tab strip.
-- ALWAYS prioritize high-level macro tools (like send_whatsapp_message, open_website_or_search, play_music, open_system_folder, find_and_open_file, media_control, window_action, quick_note, calculate) over multi-step keyboard/mouse click/type sequences. Using a macro tool is much faster and more reliable.
+- ALWAYS prioritize high-level macro tools (like send_whatsapp_message, open_whatsapp_chat, send_instagram_message, open_website_or_search, play_music, open_system_folder, find_and_open_file, media_control, window_action, quick_note, calculate) over multi-step keyboard/mouse click/type sequences. Using a macro tool is much faster and more reliable.
+- If the user asks to send a comedy reel, funny video, or music link to a contact on WhatsApp or Instagram, search for a popular matching YouTube Short or video link first, and then send that link to the recipient using send_whatsapp_message or send_instagram_message.
 """

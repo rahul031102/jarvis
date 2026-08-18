@@ -33,7 +33,7 @@ MAX_RECORD_SECONDS = 15
 
 class SpeechToText:
     def __init__(self, mic: ContinuousMicrophone) -> None:
-        self._vad = webrtcvad.Vad(2)  # aggressiveness 0-3
+        self._vad = webrtcvad.Vad(3)  # aggressiveness 3 (max background/outside noise filtering)
         self._model = None  # lazy-loaded once, reused forever
         self.mic = mic
 
@@ -98,5 +98,11 @@ class SpeechToText:
 
     def _transcribe(self, audio: np.ndarray) -> str:
         model = self._ensure_model()
-        segments, _ = model.transcribe(audio, language="en", vad_filter=True)
+        segments, _ = model.transcribe(
+            audio,
+            language="en",
+            vad_filter=True,
+            vad_parameters=dict(min_speech_duration_ms=250),  # ignore clicks/noises under 250ms
+            no_speech_threshold=0.6,                          # ignore transcription of ambient/fan hums
+        )
         return " ".join(seg.text for seg in segments)

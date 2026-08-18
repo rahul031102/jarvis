@@ -115,6 +115,26 @@ async def read_window_text(name: str) -> str:
     return "; ".join(result[:80])
 
 
+async def get_window_rect(name: str) -> tuple[int, int, int, int]:
+    """Returns a window's (left, top, right, bottom) in absolute screen
+    coordinates. Deliberately NOT built on descendants()/tree-walking —
+    rectangle() is a single cheap property read on the window handle
+    itself, so unlike everything else in this module it stays fast even
+    on apps (like WhatsApp Desktop on some installs) whose accessibility
+    tree is effectively unwalkable."""
+    def _do() -> tuple[int, int, int, int] | None:
+        win = find_window_sync(name)
+        if win is None:
+            return None
+        r = win.rectangle()
+        return (r.left, r.top, r.right, r.bottom)
+
+    result = await run_uia(_do, timeout=3.0)
+    if result is None:
+        raise JarvisError(f"I couldn't find a window matching '{name}'.")
+    return result
+
+
 async def list_browser_tabs(app_name: str) -> str:
     """Lists a browser's open tabs by reading its native tab strip (UIA
     TabItem elements) — this works even though reading the web PAGE

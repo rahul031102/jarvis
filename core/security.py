@@ -58,10 +58,15 @@ class SecurityGate:
             path_str = args.get("path") or args.get("location") or ""
             self._validate_path_not_protected(path_str, tool_name)
 
-        elif tool_name == "send_whatsapp_message":
+        elif tool_name in ("send_whatsapp_message", "open_whatsapp_chat"):
             contact = args.get("contact_name", "")
             if not _SAFE_APP_NAME.match(contact):
                 raise ToolValidationError("That doesn't look like a valid contact name.")
+
+        elif tool_name in ("send_instagram_message", "send_instagram_reel"):
+            username = args.get("username", "")
+            if not _SAFE_APP_NAME.match(username):
+                raise ToolValidationError("That doesn't look like a valid username.")
 
         elif tool_name == "forward_whatsapp_media":
             sender = args.get("sender_name", "")

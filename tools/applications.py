@@ -34,6 +34,7 @@ KNOWN_APPS: dict[str, dict] = {
     "excel": {"launch": "excel", "process_names": ["EXCEL.EXE"]},
     "terminal": {"launch": "wt", "process_names": ["WindowsTerminal.exe"]},
     "whatsapp": {"launch": "start whatsapp:", "process_names": ["WhatsApp.exe", "WhatsApp2.exe"]},
+    "instagram": {"launch": "explorer.exe shell:AppsFolder\\Facebook.InstagramBeta_8xx8rvfyw5nnt!App", "process_names": ["Instagram.exe"]},
 }
 
 

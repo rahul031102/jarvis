@@ -546,6 +546,50 @@ TOOLS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_whatsapp_chat",
+            "description": "Switch focus to WhatsApp and directly search and open a contact's chat thread by name.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "contact_name": {"type": "string", "description": "Exact display name of the contact or chat group to search for and open."}
+                },
+                "required": ["contact_name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_instagram_message",
+            "description": "Send a direct message to a user on Instagram Web using native keyboard cycling.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "username": {"type": "string", "description": "The exact Instagram username of the recipient."},
+                    "message": {"type": "string", "description": "The text message content to send."}
+                },
+                "required": ["username", "message"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_instagram_reel",
+            "description": "Open Instagram Reels, copy the active reel's URL, and send it directly to a user in DMs where Instagram automatically renders it as a native playable bubble.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "username": {"type": "string", "description": "The exact Instagram username of the recipient."},
+                    "topic": {"type": "string", "description": "Optional keyword/topic of the reel (defaults to comedy)."}
+                },
+                "required": ["username"],
+            },
+        },
+    },
 ]
 
 # Tools that are destructive/irreversible and MUST go through the
