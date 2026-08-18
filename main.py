@@ -24,6 +24,7 @@ limitation below rather than faked.
 from __future__ import annotations
 
 import asyncio
+import time
 
 from audio.cues import play_done_cue, play_wake_cue
 from audio.microphone import ContinuousMicrophone
@@ -47,7 +48,9 @@ class VoiceJarvis:
 
     async def speak(self, text: str) -> None:
         print(f"JARVIS: {text}")
+        tts_start = time.monotonic()
         await self.tts.speak(text)
+        log.info("TTS took %.0fms", (time.monotonic() - tts_start) * 1000)
 
     async def run_forever(self) -> None:
         log.info("JARVIS voice loop starting. Listening for wake word 'Jarvis'...")
@@ -68,9 +71,15 @@ class VoiceJarvis:
             await play_wake_cue()
             log.info("Listening")
         
+        if continuous_listen:
+            # Short delay to allow speaker audio echo to clear before opening the microphone again.
+            await asyncio.sleep(0.6)
+
         try:
             max_wait = 10.0 if continuous_listen else 15.0
+            stt_start = time.monotonic()
             text = await self.stt.record_and_transcribe(max_wait_seconds=max_wait)
+            log.info("STT (record+transcribe) took %.0fms", (time.monotonic() - stt_start) * 1000)
         except JarvisError:
             if continuous_listen:
                 log.info("No follow-up speech detected. Continuing continuous listen...")
@@ -81,7 +90,13 @@ class VoiceJarvis:
 
         log.info("Command recognized: %s", text)
 
-        if text.strip().lower() in STOP_PHRASES:
+        # Handle conversational exits (thank you)
+        clean_cmd = text.strip().rstrip(".?!,").lower()
+        if clean_cmd in ("thank you", "thanks", "thank you jarvis"):
+            await self.speak("You're welcome!")
+            return False  # Gracefully end continuous listening cycle
+
+        if clean_cmd in STOP_PHRASES:
             await self.tts.stop()
             log.info("Speech/action stop requested.")
             if continuous_listen:

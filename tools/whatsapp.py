@@ -162,12 +162,12 @@ async def _click_last_message() -> bool:
         clicked = False
 
     if not clicked:
-        # Best-effort keyboard fallback. WhatsApp Desktop doesn't
-        # document a tab-stop count between the composer and the message
-        # timeline, so this is a reasonable guess, staged with generous
-        # delays for Electron's UI-response lag — not a guarantee. Its
-        # own success or failure doesn't matter on its own; the clipboard
-        # check afterward is what actually determines the outcome.
+        # Best-effort keyboard fallback. In WhatsApp Desktop, pressing the Up arrow
+        # when focused in an empty text box directly selects the last message in the timeline.
+        await keyboard.press_key("up")
+        await asyncio.sleep(0.3)
+
+        # Fallback to Shift+Tab cycling if Up arrow didn't select it
         await keyboard.hotkey(["shift", "tab"])
         await asyncio.sleep(BETWEEN_SHIFT_TAB_S)
         await keyboard.hotkey(["shift", "tab"])

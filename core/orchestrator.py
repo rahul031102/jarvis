@@ -57,6 +57,9 @@ IMMEDIATE_ACKS = {
     "click_control": "Clicking that.",
     "send_whatsapp_message": "Sending WhatsApp message to {contact_name}.",
     "forward_whatsapp_media": "Forwarding WhatsApp media from {sender_name} to {recipient_name}.",
+    "open_whatsapp_chat": "Opening chat of {contact_name}.",
+    "send_instagram_message": "Sending Instagram message to {username}.",
+    "send_instagram_reel": "Sending Instagram reel to {username}.",
     "open_website_or_search": "Opening that now.",
     "control_browser_tabs": "Adjusting browser tab.",
     "play_music": "Playing music.",
@@ -88,7 +91,9 @@ class Orchestrator:
         if self._awaiting_confirmation:
             return await self._resolve_confirmation(text, speak=speak)
 
+        llm_start = time.monotonic()
         response = await self.brain.think(text)
+        log.info("LLM (decide) took %.0fms", (time.monotonic() - llm_start) * 1000)
         final_text = await self._run_tool_loop(response, speak=speak)
 
         elapsed_ms = (time.monotonic() - start) * 1000
@@ -114,9 +119,11 @@ class Orchestrator:
                         "content": result_text,
                     }
                 )
+            llm2_start = time.monotonic()
             response = await self.brain.continue_with_tool_results(
                 response.raw_assistant_message, tool_results
             )
+            log.info("LLM (summarize tool results) took %.0fms", (time.monotonic() - llm2_start) * 1000)
         return response.text
 
     async def _execute_one_tool(self, call: ToolCallRequest, *, speak) -> str | None:
@@ -133,23 +140,23 @@ class Orchestrator:
             ack_task = asyncio.create_task(speak(ack_text))
 
         try:
+            tool_start = time.monotonic()
             result = await self.tools.execute(call.name, call.input)
+            log.info("Tool '%s' execution took %.0fms", call.name, (time.monotonic() - tool_start) * 1000)
         except ConfirmationRequiredError as exc:
-            if ack_task:
-                await ack_task
+            if ack_task and not ack_task.done():
+                ack_task.cancel()
             self._awaiting_confirmation = True
             self._pending_tool_name = call.name
             await speak(exc.speakable_message)
             return None
         except Exception as exc:
-            if ack_task:
-                await ack_task
+            if ack_task and not ack_task.done():
+                ack_task.cancel()
             message = to_speakable(exc)
             log.warning("Tool '%s' failed: %s", call.name, message)
             return f"(failed: {message})"
 
-        if ack_task:
-            await ack_task
         log.info("Action completed: %s", call.name)
         return result
 
