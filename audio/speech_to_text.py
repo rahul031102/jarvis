@@ -33,7 +33,7 @@ MAX_RECORD_SECONDS = 15
 
 class SpeechToText:
     def __init__(self, mic: ContinuousMicrophone) -> None:
-        self._vad = webrtcvad.Vad(3)  # aggressiveness 3 (max background/outside noise filtering)
+        self._vad = webrtcvad.Vad(2)  # aggressiveness 2 (good balance of speech sensitivity and noise filtering)
         self._model = None  # lazy-loaded once, reused forever
         self.mic = mic
 

@@ -590,8 +590,115 @@ TOOLS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "navigate_to",
+            "description": "Open a URL in JARVIS's dedicated browser automation profile (separate from the person's regular browser) and wait for it to load.",
+            "parameters": {
+                "type": "object",
+                "properties": {"url": {"type": "string"}},
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_page_content",
+            "description": "Read the visible text content of the currently open page in JARVIS's browser automation profile — real page text, not a screenshot.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "click_web_element",
+            "description": "Click a button or link on the current page by its visible text.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "The visible text of the button/link to click."}
+                },
+                "required": ["text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fill_web_form_field",
+            "description": "Fill a form field on the current page, found by its visible label or placeholder text.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "label": {"type": "string", "description": "The visible label or placeholder of the field, e.g. 'Full Name', 'Email address'."},
+                    "value": {"type": "string"},
+                },
+                "required": ["label", "value"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "upload_file_to_form",
+            "description": "Upload a local file to a file-upload field on the current page, found by its visible label.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "label": {"type": "string", "description": "The visible label of the upload field, e.g. 'Resume', 'Cover Letter'."},
+                    "file_path": {"type": "string", "description": "Absolute path to the local file to upload."},
+                },
+                "required": ["label", "file_path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "submit_web_form",
+            "description": (
+                "DANGEROUS: submits the current web form/application. Irreversible — always requires "
+                "the user's explicit confirmation. Only call this when the user has clearly asked to "
+                "submit or apply, never speculatively as part of filling out a form."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "save_profile_field",
+            "description": "Save a piece of personal information (name, email, phone, resume file path, etc.) for later use auto-filling web forms.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "field": {"type": "string", "description": "Field name, e.g. 'full_name', 'email', 'phone', 'resume_path'."},
+                    "value": {"type": "string"},
+                },
+                "required": ["field", "value"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_profile",
+            "description": "Retrieve all saved personal information fields, e.g. before filling out a form.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
 ]
 
 # Tools that are destructive/irreversible and MUST go through the
 # confirm-then-execute flow in core/security.py before ever running.
-DANGEROUS_TOOLS: set[str] = {"delete_path", "system_power"}
+DANGEROUS_TOOLS: set[str] = {
+    "delete_path",
+    "system_power",
+    "send_whatsapp_message",
+    "forward_whatsapp_media",
+    "submit_web_form",
+    "send_instagram_message",
+    "send_instagram_reel",
+}

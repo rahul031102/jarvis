@@ -13,10 +13,16 @@ from core.errors import ConfirmationRequiredError, JarvisError, ToolNotFoundErro
 from core.logging_setup import log
 from core.memory import Memory
 from core.security import SecurityGate
-from tools import applications, browser, filesystem, instagram, keyboard, mouse, project_runner, system, whatsapp, windows
+from tools import applications, browser, filesystem, instagram, keyboard, mouse, project_runner, system, web_automation, whatsapp, whatsapp_diagnostics, windows
 from vision.read_screen import read_screen
 
 ToolFunc = Callable[..., Awaitable[str]]
+
+# Profile fields are stored via the same Memory instance as remember/
+# recall, just under a namespaced key prefix, so "my information" for
+# form-filling is the same explicit, user-controlled store as everything
+# else JARVIS remembers — not a separate, hidden data store.
+PROFILE_KEY_PREFIX = "profile:"
 
 
 class ToolRegistry:
@@ -57,6 +63,7 @@ class ToolRegistry:
             "open_whatsapp_chat": whatsapp.open_whatsapp_chat,
             "send_instagram_message": instagram.send_instagram_message,
             "send_instagram_reel": instagram.send_instagram_reel,
+            "inspect_whatsapp_ui": lambda **_: whatsapp_diagnostics.inspect_whatsapp_ui(),
             "open_website_or_search": browser.open_website_or_search,
             "control_browser_tabs": browser.control_browser_tabs,
             "play_music": browser.play_music,
@@ -68,6 +75,14 @@ class ToolRegistry:
             "window_action": system.window_action,
             "get_system_status": lambda **_: system.get_system_status(),
             "calculate": system.calculate,
+            "navigate_to": web_automation.navigate_to,
+            "read_page_content": lambda **_: web_automation.read_page_content(),
+            "click_web_element": web_automation.click_web_element,
+            "fill_web_form_field": web_automation.fill_web_form_field,
+            "upload_file_to_form": web_automation.upload_file_to_form,
+            "submit_web_form": lambda **_: web_automation.submit_web_form(),
+            "save_profile_field": self._save_profile_field,
+            "get_profile": lambda **_: self._get_profile(),
         }
 
     async def _remember(self, key: str, value: str) -> str:
@@ -82,6 +97,24 @@ class ToolRegistry:
         if not all_mem:
             return "I don't have any memories saved yet."
         return "; ".join(f"{k}: {v}" for k, v in all_mem.items())
+
+    async def _save_profile_field(self, field: str, value: str) -> str:
+        await self._memory.set(f"{PROFILE_KEY_PREFIX}{field}", value)
+        return f"Saved {field} to your profile."
+
+    async def _get_profile(self) -> str:
+        all_mem = await self._memory.get_all()
+        profile_fields = {
+            k[len(PROFILE_KEY_PREFIX):]: v
+            for k, v in all_mem.items()
+            if k.startswith(PROFILE_KEY_PREFIX)
+        }
+        if not profile_fields:
+            return (
+                "Your profile is empty. Tell me things like your full name, email, phone "
+                "number, or resume file path and I'll save them with save_profile_field."
+            )
+        return "; ".join(f"{k}: {v}" for k, v in profile_fields.items())
 
     @property
     def security(self) -> SecurityGate:

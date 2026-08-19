@@ -228,53 +228,81 @@ async def test_calculate():
 
 
 @pytest.mark.asyncio
-async def test_send_whatsapp_message_succeeds_when_chat_verified():
+async def test_send_whatsapp_message_succeeds_when_fast_uia_check_verifies():
+    """Fast path: UIA check succeeds -> no OCR fallback needed at all."""
     from tools import whatsapp
 
     with patch("tools.windows.focus_window", new=AsyncMock(return_value="Switched.")), \
          patch("tools.keyboard.hotkey", new=AsyncMock()), \
          patch("tools.keyboard.type_text", new=AsyncMock()), \
          patch("tools.keyboard.press_key", new=AsyncMock()), \
-         patch("tools.windows.read_window_text", new=AsyncMock(return_value="Chat with Govardhan; Hey there")):
+         patch("tools.uia_helpers.run_uia", new=AsyncMock(return_value=True)), \
+         patch("vision.ocr.extract_text", new=AsyncMock()) as mock_ocr:
+        result = await whatsapp.send_whatsapp_message("Govardhan", "On my way")
+
+    assert "sent to Govardhan" in result
+    mock_ocr.assert_not_called()  # fast path succeeded, fallback never triggered
+
+
+@pytest.mark.asyncio
+async def test_send_whatsapp_message_falls_back_to_ocr_and_succeeds():
+    """UIA check fails/times out -> OCR fallback runs and confirms the
+    chat -> send proceeds. This is the actual fix: previously a failed
+    UIA check just logged a warning and sent anyway with zero
+    verification; now it gets a real second check instead of skipping
+    verification entirely."""
+    from tools import whatsapp
+
+    with patch("tools.windows.focus_window", new=AsyncMock(return_value="Switched.")), \
+         patch("tools.keyboard.hotkey", new=AsyncMock()), \
+         patch("tools.keyboard.type_text", new=AsyncMock()), \
+         patch("tools.keyboard.press_key", new=AsyncMock()), \
+         patch("tools.uia_helpers.run_uia", new=AsyncMock(side_effect=Exception("timed out"))), \
+         patch("tools.windows.get_window_rect", new=AsyncMock(return_value=(0, 0, 1000, 800))), \
+         patch("vision.screen.capture_region", new=AsyncMock(return_value="fake.png")), \
+         patch("vision.ocr.extract_text", new=AsyncMock(return_value="Chat with Govardhan; Hey there")):
         result = await whatsapp.send_whatsapp_message("Govardhan", "On my way")
 
     assert "sent to Govardhan" in result
 
 
 @pytest.mark.asyncio
-async def test_send_whatsapp_message_refuses_when_chat_does_not_match():
-    """The core safety fix: if the opened chat's visible text doesn't
-    contain the contact's name, refuse to send rather than guessing —
-    this is what catches "search landed on the wrong contact" before
-    anything irreversible happens."""
+async def test_send_whatsapp_message_refuses_when_ocr_fallback_shows_wrong_chat():
+    """The core safety fix: UIA fails, OCR fallback runs, and the header
+    text doesn't contain the contact's name -> refuse rather than guess.
+    This is what catches "search landed on the wrong contact" now that
+    the old fail-open behavior is gone."""
     from tools import whatsapp
 
     with patch("tools.windows.focus_window", new=AsyncMock(return_value="Switched.")), \
          patch("tools.keyboard.hotkey", new=AsyncMock()), \
          patch("tools.keyboard.type_text", new=AsyncMock()) as mock_type, \
          patch("tools.keyboard.press_key", new=AsyncMock()), \
-         patch("tools.windows.read_window_text", new=AsyncMock(return_value="Chat with Someone Else Entirely")):
+         patch("tools.uia_helpers.run_uia", new=AsyncMock(side_effect=Exception("timed out"))), \
+         patch("tools.windows.get_window_rect", new=AsyncMock(return_value=(0, 0, 1000, 800))), \
+         patch("vision.screen.capture_region", new=AsyncMock(return_value="fake.png")), \
+         patch("vision.ocr.extract_text", new=AsyncMock(return_value="Chat with Someone Else Entirely")):
         with pytest.raises(JarvisError) as excinfo:
             await whatsapp.send_whatsapp_message("Govardhan", "On my way")
 
-    assert "wrong contact" in str(excinfo.value) or "doesn't show their name" in str(excinfo.value)
+    assert "can't confirm" in str(excinfo.value).lower()
     # The message itself must NEVER have been typed — verification failed
     # before the send step, not after.
     mock_type.assert_called_once_with("Govardhan")
 
 
 @pytest.mark.asyncio
-async def test_send_whatsapp_message_refuses_when_verification_itself_fails():
-    """If we genuinely can't read the chat to verify it (e.g. WhatsApp's
-    accessibility tree times out), that's still not a green light to send
-    — fail safe, don't fail open."""
+async def test_send_whatsapp_message_refuses_when_both_uia_and_ocr_fail():
+    """If we genuinely can't verify the chat via either path, that's
+    still not a green light to send — fail safe, don't fail open."""
     from tools import whatsapp
 
     with patch("tools.windows.focus_window", new=AsyncMock(return_value="Switched.")), \
          patch("tools.keyboard.hotkey", new=AsyncMock()), \
          patch("tools.keyboard.type_text", new=AsyncMock()) as mock_type, \
          patch("tools.keyboard.press_key", new=AsyncMock()), \
-         patch("tools.windows.read_window_text", new=AsyncMock(side_effect=JarvisError("timed out"))):
+         patch("tools.uia_helpers.run_uia", new=AsyncMock(side_effect=Exception("timed out"))), \
+         patch("tools.windows.get_window_rect", new=AsyncMock(side_effect=JarvisError("can't find window"))):
         with pytest.raises(JarvisError):
             await whatsapp.send_whatsapp_message("Govardhan", "On my way")
 
@@ -282,13 +310,8 @@ async def test_send_whatsapp_message_refuses_when_verification_itself_fails():
 
 
 @pytest.mark.asyncio
-async def test_forward_whatsapp_media_succeeds_when_both_chats_verified():
+async def test_forward_whatsapp_media_succeeds_when_fast_copy_path_works():
     from tools import whatsapp
-
-    read_results = ["Chat with Govardhan", "Chat with Mummy"]
-
-    async def fake_read(name):
-        return read_results.pop(0)
 
     seq_numbers = [100, 101]  # before -> after: changed, so copy is considered successful
 
@@ -299,7 +322,7 @@ async def test_forward_whatsapp_media_succeeds_when_both_chats_verified():
          patch("tools.keyboard.hotkey", new=AsyncMock()) as mock_hotkey, \
          patch("tools.keyboard.type_text", new=AsyncMock()) as mock_type, \
          patch("tools.keyboard.press_key", new=AsyncMock()), \
-         patch("tools.windows.read_window_text", new=fake_read), \
+         patch("tools.uia_helpers.run_uia", new=AsyncMock(return_value=True)), \
          patch.object(whatsapp, "_click_last_message", new=AsyncMock(return_value=True)), \
          patch("tools.whatsapp.get_clipboard_sequence_number", new=fake_seq), \
          patch("asyncio.sleep", new=AsyncMock()):
@@ -313,60 +336,75 @@ async def test_forward_whatsapp_media_succeeds_when_both_chats_verified():
 
 
 @pytest.mark.asyncio
-async def test_forward_whatsapp_media_refuses_when_clipboard_unchanged():
-    """This is the exact bug that shipped and reached a real user: the
-    copy step doesn't always land on something copyable, Ctrl+C copies
-    nothing, and the old code pasted+sent an empty message anyway while
-    claiming "Forwarded" — no message was actually sent. Verification now
-    uses the clipboard SEQUENCE NUMBER (format-agnostic — catches images
-    too, not just text, unlike the old GetClipboardFormats() check), and
-    must refuse before ever pasting or claiming success if it never changes,
-    even after the one built-in retry."""
+async def test_forward_whatsapp_media_falls_back_to_right_click_when_fast_copy_fails():
+    """This is the exact bug reported from a real session: the fast
+    keyboard/UIA copy path landed nothing on the clipboard every time,
+    and the old code just raised an error and gave up, so forwarding a
+    photo NEVER worked. Now, when the fast path copies nothing, it falls
+    back to right-click -> OCR-locate "Copy" -> click, which is what
+    WhatsApp Desktop actually supports for copying an arbitrary message."""
+    from tools import whatsapp
+
+    # Fast path: clipboard never changes (seq stays 5 through both checks).
+    # Fallback path: right-click + Copy click changes it to 6.
+    seq_numbers = [5, 5, 5, 6]
+
+    async def fake_seq():
+        return seq_numbers.pop(0)
+
+    async def fake_extract_boxes(path):
+        return [{"text": "Copy", "left": 500, "top": 400, "width": 40, "height": 20}]
+
+    with patch("tools.windows.focus_window", new=AsyncMock(return_value="Switched.")), \
+         patch("tools.keyboard.hotkey", new=AsyncMock()) as mock_hotkey, \
+         patch("tools.keyboard.type_text", new=AsyncMock()) as mock_type, \
+         patch("tools.keyboard.press_key", new=AsyncMock()), \
+         patch("tools.uia_helpers.run_uia", new=AsyncMock(return_value=True)), \
+         patch.object(whatsapp, "_click_last_message", new=AsyncMock(return_value=False)), \
+         patch("tools.whatsapp.get_clipboard_sequence_number", new=fake_seq), \
+         patch("tools.windows.get_window_rect", new=AsyncMock(return_value=(0, 0, 1000, 800))), \
+         patch("vision.screen.capture_screen", new=AsyncMock(return_value="fake_full.png")), \
+         patch("vision.ocr.extract_text_with_boxes", new=fake_extract_boxes), \
+         patch("pyautogui.click", MagicMock()), \
+         patch("asyncio.sleep", new=AsyncMock()):
+        result = await whatsapp.forward_whatsapp_media("Govardhan", "Mummy")
+
+    assert "Forwarded from Govardhan to Mummy" in result
+    mock_hotkey.assert_any_call(["ctrl", "v"])
+    mock_type.assert_any_call("Govardhan")
+    mock_type.assert_any_call("Mummy")
+
+
+@pytest.mark.asyncio
+async def test_forward_whatsapp_media_refuses_when_both_copy_paths_fail():
+    """Fast path copies nothing AND the right-click fallback can't find
+    a 'Copy' option either -> refuse and stop, never paste/claim success."""
     from tools import whatsapp
 
     async def fake_seq():
-        return 42  # same value every call — clipboard never actually changed
+        return 5  # never changes, either path
+
+    async def fake_extract_boxes(path):
+        return [{"text": "Reply", "left": 500, "top": 400, "width": 40, "height": 20}]  # no Copy
 
     with patch("tools.windows.focus_window", new=AsyncMock(return_value="Switched.")), \
          patch("tools.keyboard.hotkey", new=AsyncMock()) as mock_hotkey, \
          patch("tools.keyboard.type_text", new=AsyncMock()), \
          patch("tools.keyboard.press_key", new=AsyncMock()), \
-         patch("tools.windows.read_window_text", new=AsyncMock(return_value="Chat with Govardhan")), \
-         patch.object(whatsapp, "_click_last_message", new=AsyncMock(return_value=True)), \
+         patch("tools.uia_helpers.run_uia", new=AsyncMock(return_value=True)), \
+         patch.object(whatsapp, "_click_last_message", new=AsyncMock(return_value=False)), \
          patch("tools.whatsapp.get_clipboard_sequence_number", new=fake_seq), \
+         patch("tools.windows.get_window_rect", new=AsyncMock(return_value=(0, 0, 1000, 800))), \
+         patch("vision.screen.capture_screen", new=AsyncMock(return_value="fake_full.png")), \
+         patch("vision.ocr.extract_text_with_boxes", new=fake_extract_boxes), \
+         patch("pyautogui.click", MagicMock()), \
          patch("asyncio.sleep", new=AsyncMock()):
-        with pytest.raises(JarvisError) as excinfo:
+        with pytest.raises(JarvisError):
             await whatsapp.forward_whatsapp_media("Govardhan", "Mummy")
 
-    assert "clipboard never changed" in str(excinfo.value)
     # The paste step (ctrl+v) must NEVER have been reached.
     paste_calls = [c for c in mock_hotkey.call_args_list if c.args[0] == ["ctrl", "v"]]
     assert not paste_calls
-
-
-@pytest.mark.asyncio
-async def test_forward_whatsapp_media_retries_clipboard_check_once_before_failing():
-    """Some clipboard writes (especially image/media) populate a beat
-    after the copy hotkey fires — the check must retry once before
-    concluding the copy genuinely failed, not fail on the very first read."""
-    from tools import whatsapp
-
-    seq_numbers = [5, 5, 6]  # before=5, first check still 5 (not yet), retry sees 6 (changed)
-
-    async def fake_seq():
-        return seq_numbers.pop(0)
-
-    with patch("tools.windows.focus_window", new=AsyncMock(return_value="Switched.")), \
-         patch("tools.keyboard.hotkey", new=AsyncMock()), \
-         patch("tools.keyboard.type_text", new=AsyncMock()), \
-         patch("tools.keyboard.press_key", new=AsyncMock()), \
-         patch("tools.windows.read_window_text", new=AsyncMock(side_effect=["Chat with Govardhan", "Chat with Mummy"])), \
-         patch.object(whatsapp, "_click_last_message", new=AsyncMock(return_value=True)), \
-         patch("tools.whatsapp.get_clipboard_sequence_number", new=fake_seq), \
-         patch("asyncio.sleep", new=AsyncMock()):
-        result = await whatsapp.forward_whatsapp_media("Govardhan", "Mummy")
-
-    assert "Forwarded" in result
 
 
 @pytest.mark.asyncio
@@ -377,12 +415,14 @@ async def test_forward_whatsapp_media_refuses_when_sender_chat_wrong():
          patch("tools.keyboard.hotkey", new=AsyncMock()) as mock_hotkey, \
          patch("tools.keyboard.type_text", new=AsyncMock()), \
          patch("tools.keyboard.press_key", new=AsyncMock()), \
-         patch("tools.windows.read_window_text", new=AsyncMock(return_value="Chat with Nobody Relevant")):
+         patch("tools.uia_helpers.run_uia", new=AsyncMock(side_effect=Exception("timed out"))), \
+         patch("tools.windows.get_window_rect", new=AsyncMock(return_value=(0, 0, 1000, 800))), \
+         patch("vision.screen.capture_region", new=AsyncMock(return_value="fake.png")), \
+         patch("vision.ocr.extract_text", new=AsyncMock(return_value="Chat with Nobody Relevant")):
         with pytest.raises(JarvisError):
             await whatsapp.forward_whatsapp_media("Govardhan", "Mummy")
 
     # Must never have reached the copy step (ctrl+c) if the sender's chat
-    # wasn't verified — searching itself legitimately calls hotkey first,
-    # so the real assertion is that it never got to the copy.
+    # wasn't verified.
     copy_calls = [c for c in mock_hotkey.call_args_list if c.args[0] == ["ctrl", "c"]]
     assert not copy_calls

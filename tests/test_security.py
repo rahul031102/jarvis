@@ -127,3 +127,20 @@ def test_hotkey_invalid_key_rejected():
     gate = SecurityGate()
     with pytest.raises(ToolValidationError):
         gate.validate("hotkey", {"keys": ["ctrl", "bananakey"]})
+
+
+def test_submit_web_form_requires_confirmation():
+    gate = SecurityGate()
+    with pytest.raises(ConfirmationRequiredError) as excinfo:
+        gate.check("submit_web_form", {})
+    assert "irreversible" in str(excinfo.value)
+
+
+def test_submit_web_form_declined_does_not_return_pending_action():
+    gate = SecurityGate()
+    try:
+        gate.check("submit_web_form", {})
+    except ConfirmationRequiredError:
+        pass
+    approved = gate.confirm_and_check(user_said_yes=False)
+    assert approved is None

@@ -176,4 +176,9 @@ class SecurityGate:
         if tool_name == "system_power":
             action = args.get("action")
             return f"This will {action} your computer. Do you want me to continue?"
+        if tool_name == "submit_web_form":
+            return (
+                "This will submit the form on the current page — that's irreversible. "
+                "Make sure everything I filled in looks right first. Submit it?"
+            )
         return "This action can't be undone. Do you want me to continue?"

@@ -112,3 +112,42 @@ async def test_dangerous_tool_declined_does_not_execute(tmp_path, spoken):
 
     assert target_file.exists()  # never deleted
     assert "won't do that" in result
+
+
+@pytest.mark.asyncio
+async def test_save_and_get_profile_field(tmp_path):
+    memory = Memory(db_path=tmp_path / "mem.db")
+    registry = ToolRegistry(memory)
+
+    result = await registry._save_profile_field("full_name", "Rahul Kumar Dasari")
+    assert "full_name" in result
+
+    profile = await registry._get_profile()
+    assert "full_name: Rahul Kumar Dasari" in profile
+
+
+@pytest.mark.asyncio
+async def test_get_profile_empty_gives_helpful_message(tmp_path):
+    memory = Memory(db_path=tmp_path / "mem.db")
+    registry = ToolRegistry(memory)
+
+    profile = await registry._get_profile()
+    assert "empty" in profile.lower()
+
+
+@pytest.mark.asyncio
+async def test_profile_fields_isolated_from_regular_remember_recall(tmp_path):
+    """Profile fields use a namespaced key prefix — they must not leak
+    into or collide with the general remember/recall store."""
+    memory = Memory(db_path=tmp_path / "mem.db")
+    registry = ToolRegistry(memory)
+
+    await registry._remember("main_project", "C:/Projects/JARVIS")
+    await registry._save_profile_field("email", "ron@example.com")
+
+    all_recall = await registry._recall()
+    assert "main_project" in all_recall
+
+    profile = await registry._get_profile()
+    assert "email: ron@example.com" in profile
+    assert "main_project" not in profile  # regular memory shouldn't leak into profile view

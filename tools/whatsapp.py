@@ -21,24 +21,26 @@ its own result isn't verification, it's decoration, and for something
 irreversible like sending a message to a real person, that's not an
 acceptable trade-off for speed:
 
-1. Chat-identity verification (_verify_correct_chat_open): after
-   searching and selecting a contact, reads the opened chat's visible
-   text via the UIA accessibility tree (read_window_text — a single,
-   depth-bounded tree-walk, not the old slow per-type-repeated scan) and
-   confirms the contact's name actually appears. If it can't confirm
-   this, it stops rather than guessing.
+1. Chat-identity verification (_verify_correct_chat_open): tries the
+   fast UIA check first (near-free when the accessibility tree is
+   healthy); if that fails/times out, falls back to a single OCR read of
+   the chat header rather than giving up. Never proceeds unverified.
 
 2. Clipboard verification (_copy_last_message_and_verify): compares the
    Windows clipboard SEQUENCE NUMBER (tools/clipboard.py,
-   GetClipboardSequenceNumber()) before and after the copy attempt. This
-   is format-agnostic — it bumps on ANY clipboard change (text, image,
-   file list) — which is why it's used instead of a format-specific
-   check like GetClipboardFormats(): a format check can miss certain
-   image/media clipboard representations and wrongly report "nothing
-   copied" even when something genuinely was, which is the most likely
-   reason forwarding media specifically was unreliable before this fix.
-   Includes one bounded retry after a short delay, since some clipboard
-   writes (especially images) populate asynchronously.
+   GetClipboardSequenceNumber()) before and after the copy attempt —
+   format-agnostic, bumps on ANY clipboard change (text, image, file
+   list). Tries the fast keyboard/UIA selection path first; if nothing
+   actually landed on the clipboard, falls back to right-clicking the
+   message and OCR-locating "Copy" in WhatsApp's real context menu — the
+   only mechanism WhatsApp Desktop actually exposes for copying an
+   arbitrary received message (there's no documented pure-keyboard
+   equivalent), which is almost certainly why the fast path alone was
+   failing consistently on some machines.
+
+Both paths only pay the slower OCR cost once the fast path has already
+been tried and failed — they don't replace it. On a machine where UIA
+works fine, none of this fallback code runs and behavior is unchanged.
 """
 from __future__ import annotations
 
@@ -95,8 +97,19 @@ async def _search_and_select_contact(contact_name: str) -> None:
 
 
 async def _verify_correct_chat_open(contact_name: str) -> None:
-    """Best-effort check to confirm the correct chat is open.
-    If UIA query hangs or fails, we log it but proceed anyway to avoid blocking the user."""
+    """Confirms the correct chat is open. Tries the fast UIA check first
+    (near-free when WhatsApp's accessibility tree is healthy) and, only if
+    that fails/times out, falls back to a single OCR read of the chat
+    header — never silently proceeds unverified either way.
+
+    Why not just "fail closed" on the UIA result alone: on at least one
+    real machine, WhatsApp's UIA tree times out consistently, which would
+    make a UIA-only fail-closed check reject every single attempt. That's
+    not actually safer in practice — the orchestrator then retries the
+    whole macro, and repeated full-timeout failures are what produced the
+    40-90 second total latencies seen in real logs, not the tool's base
+    cost. A single OCR fallback (~1-1.5s) costs less than one of those
+    failed-UIA-then-retry cycles and actually succeeds where UIA can't."""
     import re
     from tools.uia_helpers import find_window_sync, run_uia
     from core.logging_setup import log
@@ -122,8 +135,31 @@ async def _verify_correct_chat_open(contact_name: str) -> None:
     except Exception:
         verified = False
 
-    if not verified:
-        log.warning("Could not verify opened WhatsApp chat identity for '%s' (UIA check timed out or failed). Proceeding anyway.", contact_name)
+    if verified:
+        return
+
+    log.warning("UIA chat verification for '%s' failed/timed out — falling back to OCR.", contact_name)
+
+    from vision.ocr import extract_text
+    from vision.screen import capture_region
+    from tools import windows as windows_mod
+
+    try:
+        left, top, right, bottom = await windows_mod.get_window_rect("WhatsApp")
+        header_bottom = top + int((bottom - top) * 0.15)
+        image_path = await capture_region(left, top, right, header_bottom)
+        text = (await extract_text(image_path)).lower()
+    except Exception as exc:
+        raise JarvisError(
+            f"I can't confirm the chat with {contact_name} is open — both the "
+            "accessibility check and the fallback screen-read failed."
+        ) from exc
+
+    if needle not in text:
+        raise JarvisError(
+            f"I can't confirm the chat with {contact_name} is actually open — "
+            "the chat header doesn't show that name, so I'm stopping here rather than guessing."
+        )
 
 
 async def _click_last_message() -> bool:
@@ -183,16 +219,18 @@ async def _click_last_message() -> bool:
 
 
 async def _copy_last_message_and_verify() -> None:
-    """Selects the last message and copies it, then verifies something
-    was ACTUALLY captured using the clipboard sequence number — not a
-    format check. This is the real fix for media/photo forwarding
-    specifically: a format-based check (pywinauto.clipboard.
-    GetClipboardFormats()) can come back empty for certain image
-    clipboard representations even when a copy genuinely worked, because
-    some apps populate image clipboard data slightly asynchronously.
-    The sequence number bumps the instant ANY new data lands on the
-    clipboard, in any format, so it can't have that blind spot. Includes
-    one bounded retry for exactly that async-population case."""
+    """Selects the last message and copies it, verifying with the
+    clipboard sequence number (format-agnostic, catches image copies a
+    format check can miss). If the fast keyboard/UIA path doesn't
+    actually copy anything, falls back to right-clicking the message and
+    OCR-locating "Copy" in the real context menu — WhatsApp Desktop has
+    no documented pure-keyboard shortcut to copy an arbitrary (received)
+    message; right-click -> Copy is the only mechanism it actually
+    exposes for that, which is almost certainly why the fast path alone
+    was failing every time. The fast path stays as the FIRST attempt
+    (free on machines where it happens to work); this only pays the
+    slower OCR cost when it's already been established the fast path
+    didn't do anything."""
     before = await get_clipboard_sequence_number()
 
     await keyboard.press_key("escape")
@@ -210,14 +248,69 @@ async def _copy_last_message_and_verify() -> None:
         await asyncio.sleep(CLIPBOARD_RETRY_DELAY_S)
         after = await get_clipboard_sequence_number()
 
-    if after == before:
+    if after != before:
+        return
+
+    log.warning("Fast copy path landed nothing on the clipboard — falling back to right-click Copy.")
+    await _right_click_copy_fallback(before)
+
+
+async def _right_click_copy_fallback(before_seq: int) -> None:
+    """Right-clicks near the bottom of the timeline (where the newest
+    message sits, just above the composer) and OCR-locates+clicks "Copy"
+    in the menu that opens. This is a real coordinate guess and a real
+    OCR read — slower than the keyboard path, but it's WhatsApp's actual
+    UI mechanism for copying a message, which the keyboard path has no
+    real equivalent for."""
+    import pyautogui
+    from vision.ocr import extract_text_with_boxes
+    from vision.screen import capture_screen
+    from tools import windows as windows_mod
+
+    left, top, right, bottom = await windows_mod.get_window_rect("WhatsApp")
+    timeline_left = left + int((right - left) * 0.35)  # skip the left contact-list pane
+    click_x = timeline_left + int((right - timeline_left) * 0.5)
+    click_y = bottom - 90  # just above the composer/input box
+
+    await asyncio.to_thread(pyautogui.click, click_x, click_y, "right")
+    await asyncio.sleep(0.5)
+
+    menu_path = await capture_screen()
+    words = await extract_text_with_boxes(menu_path)
+    copy_word = next((w for w in words if w["text"].strip().lower() in ("copy", "forward")), None)
+
+    if copy_word is None:
+        await keyboard.press_key("escape")
         raise JarvisError(
-            "I tried to copy the last message but the clipboard never changed — "
-            "the copy step didn't land on anything, so I stopped before pasting anything."
+            "I right-clicked the last message but couldn't find a 'Copy' option in the menu "
+            "that appeared — the click may have missed the message, or nothing selectable is there."
+        )
+
+    menu_click_x = copy_word["left"] + copy_word["width"] // 2
+    menu_click_y = copy_word["top"] + copy_word["height"] // 2
+    await asyncio.to_thread(pyautogui.click, menu_click_x, menu_click_y)
+    await asyncio.sleep(0.5)
+
+    after_seq = await get_clipboard_sequence_number()
+    if after_seq == before_seq:
+        raise JarvisError(
+            "I clicked Copy but nothing ended up on the clipboard — "
+            "I stopped before pasting anything."
         )
 
 
+def _sanitize_contact_name(contact_name: str) -> str:
+    import re
+    name = contact_name.strip()
+    # Strip common conversational suffixes (e.g. "Mummy contact", "Arun chart", "Arun chat")
+    name = re.sub(r'\s+(contact|chat|chart|profile|message|account)$', '', name, flags=re.IGNORECASE)
+    # Strip common conversational prefixes (e.g. "contact of Mummy", "chat of Arun")
+    name = re.sub(r'^(contact of|chat of|chart of|message to|send to)\s+', '', name, flags=re.IGNORECASE)
+    return name.strip()
+
+
 async def send_whatsapp_message(contact_name: str, message: str) -> str:
+    contact_name = _sanitize_contact_name(contact_name)
     await _ensure_whatsapp_focused()
     await asyncio.sleep(AFTER_FOCUS_S)
     await _search_and_select_contact(contact_name)
@@ -231,6 +324,14 @@ async def send_whatsapp_message(contact_name: str, message: str) -> str:
 
 
 async def forward_whatsapp_media(sender_name: str, recipient_name: str) -> str:
+    import pyautogui
+    from vision.ocr import extract_text_with_boxes
+    from vision.screen import capture_screen
+    from tools import windows as windows_mod
+
+    sender_name = _sanitize_contact_name(sender_name)
+    recipient_name = _sanitize_contact_name(recipient_name)
+
     await _ensure_whatsapp_focused()
     await asyncio.sleep(AFTER_FOCUS_S)
 
@@ -238,28 +339,49 @@ async def forward_whatsapp_media(sender_name: str, recipient_name: str) -> str:
     await _search_and_select_contact(sender_name)
     await _verify_correct_chat_open(sender_name)
 
-    # 2. Copy the last message/media, and verify something was actually
-    #    copied (clipboard sequence number, not a format check — catches
-    #    image copies that a format check can miss).
-    await _copy_last_message_and_verify()
+    # 2. Right-click the last message/media to open the context menu.
+    left, top, right, bottom = await windows_mod.get_window_rect("WhatsApp")
+    timeline_left = left + int((right - left) * 0.35)  # skip left contact pane
+    click_x = timeline_left + int((right - timeline_left) * 0.5)
+    click_y = bottom - 90  # just above input composer
 
-    # 3. Open recipient's chat and verify it's really them.
-    await _search_and_select_contact(recipient_name)
-    await _verify_correct_chat_open(recipient_name)
+    await asyncio.to_thread(pyautogui.click, click_x, click_y, "right")
+    await asyncio.sleep(0.5)
 
-    # 4. Paste and send. Generous wait for the media preview/upload
-    #    dialog to render before hitting Enter — there isn't a reliable
-    #    text signal to check this rendered (WhatsApp's preview dialog
-    #    text isn't something I can verify without a live instance to
-    #    test against), so this stays a staged delay, not a hard check.
-    await keyboard.hotkey(["ctrl", "v"])
-    await asyncio.sleep(AFTER_PASTE_S)
+    # 3. OCR context menu and click "Forward"
+    menu_path = await capture_screen()
+    words = await extract_text_with_boxes(menu_path)
+    forward_word = next((w for w in words if w["text"].strip().lower() == "forward"), None)
+
+    if forward_word is None:
+        await keyboard.press_key("escape")
+        raise JarvisError(
+            f"I right-clicked the last message in {sender_name}'s chat, but couldn't find a 'Forward' "
+            "option in the menu. Please make sure there is a forwardable message visible."
+        )
+
+    menu_click_x = forward_word["left"] + forward_word["width"] // 2
+    menu_click_y = forward_word["top"] + forward_word["height"] // 2
+    await asyncio.to_thread(pyautogui.click, menu_click_x, menu_click_y)
+    await asyncio.sleep(0.8)  # wait for forward dialog to render
+
+    # 4. Type the recipient's name in the search box
+    await keyboard.type_text(recipient_name)
+    await asyncio.sleep(1.0)  # wait for search results to filter
+
+    # 5. Select the contact and send using keyboard navigation
+    await keyboard.press_key("tab")
+    await asyncio.sleep(0.2)
+    await keyboard.press_key("space")
+    await asyncio.sleep(0.5)
     await keyboard.press_key("enter")
+    await asyncio.sleep(0.5)
 
-    return f"Forwarded from {sender_name} to {recipient_name}."
+    return f"Forwarded media from {sender_name} to {recipient_name}."
 
 
 async def open_whatsapp_chat(contact_name: str) -> str:
+    contact_name = _sanitize_contact_name(contact_name)
     await _ensure_whatsapp_focused()
     await asyncio.sleep(AFTER_FOCUS_S)
     await _search_and_select_contact(contact_name)
