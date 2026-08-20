@@ -80,7 +80,12 @@ TOOLS: list[dict] = [
         "function": {
             "name": "screenshot",
             "description": "Take a screenshot of the primary display and save it.",
-            "parameters": {"type": "object", "properties": {}},
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "dummy": {"type": "boolean", "description": "Optional dummy parameter, ignore."}
+                },
+            },
         },
     },
     {
@@ -133,7 +138,12 @@ TOOLS: list[dict] = [
         "function": {
             "name": "get_running_processes",
             "description": "List currently running applications/processes visible to the user.",
-            "parameters": {"type": "object", "properties": {}},
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "dummy": {"type": "boolean", "description": "Optional dummy parameter, ignore."}
+                },
+            },
         },
     },
     {
@@ -198,7 +208,12 @@ TOOLS: list[dict] = [
                 "'read the text on my screen'). Only call this when the user's request "
                 "actually needs to know what's visually on screen."
             ),
-            "parameters": {"type": "object", "properties": {}},
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "dummy": {"type": "boolean", "description": "Optional dummy parameter, ignore."}
+                },
+            },
         },
     },
     {
@@ -240,7 +255,12 @@ TOOLS: list[dict] = [
         "function": {
             "name": "list_open_windows",
             "description": "List the titles of all currently open application windows (what's on the taskbar/alt-tab list right now).",
-            "parameters": {"type": "object", "properties": {}},
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "dummy": {"type": "boolean", "description": "Optional dummy parameter, ignore."}
+                },
+            },
         },
     },
     {
@@ -248,7 +268,12 @@ TOOLS: list[dict] = [
         "function": {
             "name": "get_active_window",
             "description": "Get the title of whichever window currently has focus.",
-            "parameters": {"type": "object", "properties": {}},
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "dummy": {"type": "boolean", "description": "Optional dummy parameter, ignore."}
+                },
+            },
         },
     },
     {
@@ -529,7 +554,12 @@ TOOLS: list[dict] = [
         "function": {
             "name": "get_system_status",
             "description": "Retrieve current CPU load, memory utilization, disk space, and battery status.",
-            "parameters": {"type": "object", "properties": {}},
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "dummy": {"type": "boolean", "description": "Optional dummy parameter, ignore."}
+                },
+            },
         },
     },
     {
@@ -607,7 +637,12 @@ TOOLS: list[dict] = [
         "function": {
             "name": "read_page_content",
             "description": "Read the visible text content of the currently open page in JARVIS's browser automation profile — real page text, not a screenshot.",
-            "parameters": {"type": "object", "properties": {}},
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "dummy": {"type": "boolean", "description": "Optional dummy parameter, ignore."}
+                },
+            },
         },
     },
     {
@@ -663,7 +698,12 @@ TOOLS: list[dict] = [
                 "the user's explicit confirmation. Only call this when the user has clearly asked to "
                 "submit or apply, never speculatively as part of filling out a form."
             ),
-            "parameters": {"type": "object", "properties": {}},
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "dummy": {"type": "boolean", "description": "Optional dummy parameter, ignore."}
+                },
+            },
         },
     },
     {
@@ -686,7 +726,12 @@ TOOLS: list[dict] = [
         "function": {
             "name": "get_profile",
             "description": "Retrieve all saved personal information fields, e.g. before filling out a form.",
-            "parameters": {"type": "object", "properties": {}},
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "dummy": {"type": "boolean", "description": "Optional dummy parameter, ignore."}
+                },
+            },
         },
     },
 ]

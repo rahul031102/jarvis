@@ -13,7 +13,7 @@ from core.errors import ConfirmationRequiredError, JarvisError, ToolNotFoundErro
 from core.logging_setup import log
 from core.memory import Memory
 from core.security import SecurityGate
-from tools import applications, browser, filesystem, instagram, keyboard, mouse, project_runner, system, web_automation, whatsapp, whatsapp_diagnostics, windows
+from tools import applications, browser, filesystem, instagram, keyboard, mouse, project_runner, system, web_automation, whatsapp, windows
 from vision.read_screen import read_screen
 
 ToolFunc = Callable[..., Awaitable[str]]
@@ -63,7 +63,6 @@ class ToolRegistry:
             "open_whatsapp_chat": whatsapp.open_whatsapp_chat,
             "send_instagram_message": instagram.send_instagram_message,
             "send_instagram_reel": instagram.send_instagram_reel,
-            "inspect_whatsapp_ui": lambda **_: whatsapp_diagnostics.inspect_whatsapp_ui(),
             "open_website_or_search": browser.open_website_or_search,
             "control_browser_tabs": browser.control_browser_tabs,
             "play_music": browser.play_music,

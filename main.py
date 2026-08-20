@@ -53,8 +53,8 @@ class VoiceJarvis:
         log.info("TTS took %.0fms", (time.monotonic() - tts_start) * 1000)
 
     async def run_forever(self) -> None:
-        log.info("JARVIS voice loop starting. Listening for wake word 'Jarvis'...")
-        continuous_listen = False
+        log.info("JARVIS voice loop starting. Listening continuously (wake-word bypassed)...")
+        continuous_listen = True
         while True:
             try:
                 continuous_listen = await self._one_cycle(continuous_listen)
@@ -63,9 +63,9 @@ class VoiceJarvis:
             except Exception as exc:  # never let one bad cycle kill the whole assistant
                 log.exception("Unhandled error in voice cycle")
                 await self.speak(to_speakable(exc))
-                continuous_listen = False
+                continuous_listen = True
 
-    async def _one_cycle(self, continuous_listen: bool = False) -> bool:
+    async def _one_cycle(self, continuous_listen: bool = True) -> bool:
         if not continuous_listen:
             await self.wake_word.listen_for_wake_word()
             await play_wake_cue()
@@ -94,14 +94,12 @@ class VoiceJarvis:
         clean_cmd = text.strip().rstrip(".?!,").lower()
         if clean_cmd in ("thank you", "thanks", "thank you jarvis"):
             await self.speak("You're welcome!")
-            return False  # Gracefully end continuous listening cycle
+            return True  # Keep continuous listening active
 
         if clean_cmd in STOP_PHRASES:
             await self.tts.stop()
             log.info("Speech/action stop requested.")
-            if continuous_listen:
-                return True
-            return False
+            return True
 
         await self.orchestrator.handle_utterance(text, speak=self.speak)
         await play_done_cue()

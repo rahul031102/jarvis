@@ -89,7 +89,8 @@ class SpeechToText:
             frames.append(block)
             ring_buffer.append(is_speech)
             if len(ring_buffer) == ring_buffer.maxlen and not any(ring_buffer):
-                break
+                if len(frames) >= 40:  # Minimum 1.2 seconds of recording to prevent early cut-offs on wake-cue beep
+                    break
 
         if not frames:
             return None

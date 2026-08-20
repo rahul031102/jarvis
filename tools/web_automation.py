@@ -67,8 +67,11 @@ class BrowserSession:
             try:
                 self._context = await self._playwright.chromium.launch_persistent_context(
                     user_data_dir=str(PROFILE_DIR),
+                    channel="chrome",
                     headless=False,  # visible on purpose — see module docstring
                     viewport={"width": 1280, "height": 900},
+                    ignore_default_args=["--enable-automation"],
+                    args=["--disable-blink-features=AutomationControlled"],
                 )
             except Exception as exc:
                 await self._playwright.stop()
